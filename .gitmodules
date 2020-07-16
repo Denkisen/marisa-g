@@ -1,0 +1,3 @@
+[submodule "VK-nn"]
+	path = VK-nn
+	url = git@github.com:Denkisen/VK-nn.git
