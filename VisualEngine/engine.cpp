@@ -11,6 +11,7 @@ std::vector<VkSemaphore> VisualEngine::image_available_semaphores;
 std::vector<VkSemaphore> VisualEngine::render_finished_semaphores;
 std::vector<VkFence> VisualEngine::in_queue_fences;
 std::vector<VkFence> VisualEngine::images_in_process;
+std::vector<Vulkan::ShaderInfo> VisualEngine::shader_infos;
 size_t VisualEngine::height = 768;
 size_t VisualEngine::width = 1024;
 size_t VisualEngine::frames_in_pipeline = 10;
@@ -18,26 +19,28 @@ size_t VisualEngine::current_frame = 0;
 GLFWwindow * VisualEngine::window = nullptr;
 std::thread VisualEngine::event_handler_thread;
 
+bool VisualEngine::resize_flag = false;
+
 VisualEngine::VisualEngine()
 {    
   glfwInit();
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-  glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+  glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
   window = glfwCreateWindow(width, height, instance.AppName().c_str(), nullptr, nullptr);
+  glfwSetWindowUserPointer(window, this);
+  glfwSetFramebufferSizeCallback(window, FrameBufferResizeCallback);
+
   device = std::make_shared<Vulkan::Device>(Vulkan::PhysicalDeviceType::Discrete, Vulkan::QueueType::DrawingType, window);
   swapchain = std::make_shared<Vulkan::SwapChain>(device);
   render_pass = std::make_shared<Vulkan::RenderPass>(device, swapchain);
-  std::vector<Vulkan::ShaderInfo> shader_infos(2);
+  shader_infos.resize(2);
   shader_infos[0] = {"main", "bin/vert.spv", Vulkan::ShaderType::Vertex};
   shader_infos[1] = {"main", "bin/frag.spv", Vulkan::ShaderType::Fragment};
 
   g_pipeline = std::make_shared<Vulkan::GraphicPipeline>(device, swapchain, render_pass, shader_infos);
   command_pool = Vulkan::Supply::CreateCommandPool(device->GetDevice(), device->GetGraphicFamilyQueueIndex().value());
-  command_buffers = Vulkan::Supply::CreateCommandBuffers(device->GetDevice(), 
-                                                        command_pool, 
-                                                        render_pass->GetFrameBuffersCount(), 
-                                                        VK_COMMAND_BUFFER_LEVEL_PRIMARY);
+
   WriteCommandBuffers();
 
   VkSemaphoreCreateInfo semaphore_info = {};
@@ -94,9 +97,24 @@ void VisualEngine::EventHadler()
   vkDeviceWaitIdle(device->GetDevice());
 }
 
+void VisualEngine::FrameBufferResizeCallback(GLFWwindow* window, int width, int height)
+{
+  auto app = reinterpret_cast<VisualEngine*>(glfwGetWindowUserPointer(window));
+  app->resize_flag = true;
+}
+
 void VisualEngine::WriteCommandBuffers()
 {
   auto f_buffers = render_pass->GetFrameBuffers();
+
+  if (!command_buffers.empty())
+    vkFreeCommandBuffers(device->GetDevice(), command_pool, (uint32_t) command_buffers.size(), command_buffers.data());
+
+  command_buffers = Vulkan::Supply::CreateCommandBuffers(device->GetDevice(), 
+                                                        command_pool, 
+                                                        render_pass->GetFrameBuffersCount(), 
+                                                        VK_COMMAND_BUFFER_LEVEL_PRIMARY);
+
   for (size_t i = 0; i < command_buffers.size(); ++i)
   {
     VkCommandBufferBeginInfo begin_info = {};
@@ -133,7 +151,31 @@ void VisualEngine::DrawFrame()
 {
   uint32_t image_index = 0;
   vkWaitForFences(device->GetDevice(), 1, &in_queue_fences[current_frame], VK_TRUE, UINT64_MAX);
-  vkAcquireNextImageKHR(device->GetDevice(), swapchain->GetSwapChain(), UINT64_MAX, image_available_semaphores[current_frame], VK_NULL_HANDLE, &image_index);
+  VkResult res = vkAcquireNextImageKHR(device->GetDevice(), swapchain->GetSwapChain(), UINT64_MAX, image_available_semaphores[current_frame], VK_NULL_HANDLE, &image_index);
+
+  if (res != VK_SUCCESS)
+  {
+    if (res == VK_SUBOPTIMAL_KHR || res == VK_ERROR_OUT_OF_DATE_KHR || resize_flag)
+    {
+      int width = 0, height = 0;
+      do
+      {
+        glfwGetFramebufferSize(window, &width, &height);
+        glfwWaitEvents();
+      } while (width == 0 || height == 0);
+      
+      vkDeviceWaitIdle(device->GetDevice());
+      resize_flag = false;
+      swapchain->ReBuildSwapChain();
+      render_pass->ReBuildRenderPass();
+      g_pipeline->ReBuildPipeline(shader_infos);
+
+      WriteCommandBuffers();
+      return;
+    }
+    else
+      throw std::runtime_error("failed to acquire swap chain image!");
+  }
 
   if (images_in_process[image_index] != VK_NULL_HANDLE) 
   {

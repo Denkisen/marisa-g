@@ -38,8 +38,12 @@ private:
   static std::vector<VkSemaphore> render_finished_semaphores;
   static std::vector<VkFence> in_queue_fences;
   static std::vector<VkFence> images_in_process;
+  static std::vector<Vulkan::ShaderInfo> shader_infos;
+
+  static bool resize_flag;
 
   static void EventHadler();
+  static void FrameBufferResizeCallback(GLFWwindow* window, int width, int height);
 
   static void WriteCommandBuffers();
   static void DrawFrame();
