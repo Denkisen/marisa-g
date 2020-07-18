@@ -5,6 +5,7 @@ std::shared_ptr<Vulkan::Device> VisualEngine::device;
 std::shared_ptr<Vulkan::SwapChain> VisualEngine::swapchain;
 std::shared_ptr<Vulkan::RenderPass> VisualEngine::render_pass;
 std::shared_ptr<Vulkan::GraphicPipeline> VisualEngine::g_pipeline;
+std::shared_ptr<Vulkan::VertexArray<Vertex>> VisualEngine::input_vertex_array;
 VkCommandPool VisualEngine::command_pool;
 std::vector<VkCommandBuffer> VisualEngine::command_buffers;
 std::vector<VkSemaphore> VisualEngine::image_available_semaphores;
@@ -38,8 +39,29 @@ VisualEngine::VisualEngine()
   shader_infos[0] = {"main", "bin/vert.spv", Vulkan::ShaderType::Vertex};
   shader_infos[1] = {"main", "bin/frag.spv", Vulkan::ShaderType::Fragment};
 
-  g_pipeline = std::make_shared<Vulkan::GraphicPipeline>(device, swapchain, render_pass, shader_infos);
+  g_pipeline = std::make_shared<Vulkan::GraphicPipeline>(device, swapchain, render_pass);
   command_pool = Vulkan::Supply::CreateCommandPool(device->GetDevice(), device->GetGraphicFamilyQueueIndex().value());
+
+  std::vector<Vertex> vertices = 
+  {
+    {{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+    {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+    {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+  };
+
+  std::vector<Vulkan::VertexDescription> vertex_descriptions = 
+  {
+    {offsetof(Vertex, pos), VK_FORMAT_R32G32_SFLOAT},
+    {offsetof(Vertex, color), VK_FORMAT_R32G32B32_SFLOAT}
+  };
+  input_vertex_array = std::make_shared<Vulkan::VertexArray<Vertex>>(device, vertices);
+
+  std::vector<VkVertexInputBindingDescription> binding_description(1);
+  std::vector<VkVertexInputAttributeDescription> attribute_descriptions;
+  input_vertex_array->GetVertexInputBindingDescription(0, vertex_descriptions, binding_description[0], attribute_descriptions);
+
+  g_pipeline->SetShaderInfos(shader_infos);
+  g_pipeline->SetVertexInputBindingDescription(binding_description, attribute_descriptions);
 
   WriteCommandBuffers();
 
@@ -105,8 +127,6 @@ void VisualEngine::FrameBufferResizeCallback(GLFWwindow* window, int width, int 
 
 void VisualEngine::WriteCommandBuffers()
 {
-  auto f_buffers = render_pass->GetFrameBuffers();
-
   if (!command_buffers.empty())
     vkFreeCommandBuffers(device->GetDevice(), command_pool, (uint32_t) command_buffers.size(), command_buffers.data());
 
@@ -114,31 +134,39 @@ void VisualEngine::WriteCommandBuffers()
                                                         command_pool, 
                                                         render_pass->GetFrameBuffersCount(), 
                                                         VK_COMMAND_BUFFER_LEVEL_PRIMARY);
+  auto f_buffers = render_pass->GetFrameBuffers();
+
+  VkCommandBufferBeginInfo begin_info = {};
+  begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+  begin_info.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+  begin_info.pInheritanceInfo = nullptr;
+
+  VkRenderPassBeginInfo render_pass_info = {};
+  render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+  render_pass_info.renderPass = render_pass->GetRenderPass();    
+  render_pass_info.renderArea.offset = {0, 0};
+  render_pass_info.renderArea.extent = swapchain->GetExtent();
+
+  VkClearValue clear_color = {0.0f, 0.0f, 0.0f, 1.0f};
+  render_pass_info.clearValueCount = 1;
+  render_pass_info.pClearValues = &clear_color;
+
+  VkBuffer vertex_buffers[] = { input_vertex_array->GetBuffer() };
+  VkDeviceSize offsets[] = { 0 };
 
   for (size_t i = 0; i < command_buffers.size(); ++i)
   {
-    VkCommandBufferBeginInfo begin_info = {};
-    begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    begin_info.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
-    begin_info.pInheritanceInfo = nullptr;
-
     if (vkBeginCommandBuffer(command_buffers[i], &begin_info) != VK_SUCCESS) {
         throw std::runtime_error("failed to begin recording command buffer!");
     }
 
-    VkRenderPassBeginInfo render_pass_info = {};
-    render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    render_pass_info.renderPass = render_pass->GetRenderPass();
     render_pass_info.framebuffer = f_buffers[i];
-    render_pass_info.renderArea.offset = {0, 0};
-    render_pass_info.renderArea.extent = swapchain->GetExtent();
-    VkClearValue clear_color = {0.0f, 0.0f, 0.0f, 1.0f};
-    render_pass_info.clearValueCount = 1;
-    render_pass_info.pClearValues = &clear_color;
-
+    vkCmdBindVertexBuffers(command_buffers[i], 0, 1, vertex_buffers, offsets);
     vkCmdBeginRenderPass(command_buffers[i], &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
+    
     vkCmdBindPipeline(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, g_pipeline->GetPipeline());
-    vkCmdDraw(command_buffers[i], 3, 1, 0, 0);
+
+    vkCmdDraw(command_buffers[i], input_vertex_array->GetElementsCount(), 1, 0, 0);
     vkCmdEndRenderPass(command_buffers[i]);
     if (vkEndCommandBuffer(command_buffers[i]) != VK_SUCCESS) 
     {
@@ -168,7 +196,7 @@ void VisualEngine::DrawFrame()
       resize_flag = false;
       swapchain->ReBuildSwapChain();
       render_pass->ReBuildRenderPass();
-      g_pipeline->ReBuildPipeline(shader_infos);
+      g_pipeline->ReBuildPipeline();
 
       WriteCommandBuffers();
       return;

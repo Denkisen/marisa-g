@@ -20,7 +20,10 @@ SOURCE += $(wildcard VisualEngine/*.cpp)
 
 OBJECTS = $(notdir $(SOURCE:.cpp=.o))
 
-all: prepere $(BIN_DIR)/$(APP_NAME) shaders
+.PHONY: prepere run clean dbg shaders build
+
+all:
+	$(MAKE) -j12 build 
 
 $(BIN_DIR)/$(APP_NAME): $(addprefix $(BUILD_DIR)/,$(OBJECTS))
 	$(CXX) -o $(BIN_DIR)/$(APP_NAME) $(addprefix $(BUILD_DIR)/,$(OBJECTS)) $(CXXFLAGS) $(LDFLAGS)
@@ -28,10 +31,7 @@ $(BIN_DIR)/$(APP_NAME): $(addprefix $(BUILD_DIR)/,$(OBJECTS))
 $(BUILD_DIR)/%.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c $^ -o $@
 
-.PHONY: prepere run clean dbg shaders multi
-
-multi:
-	$(MAKE) -j12 all
+build: prepere $(BIN_DIR)/$(APP_NAME) shaders
 
 prepere:
 	mkdir -p $(BUILD_DIR)

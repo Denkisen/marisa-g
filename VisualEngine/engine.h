@@ -9,14 +9,22 @@
 #include "../VK-nn/Vulkan/SwapChain.h"
 #include "../VK-nn/Vulkan/GraphicPipeline.h"
 #include "../VK-nn/Vulkan/RenderPass.h"
+#include "../VK-nn/Vulkan/VertexArray.h"
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
+#include <glm/glm.hpp>
 #include <iostream>
 #include <vector>
 #include <memory>
 #include <thread>
 #include <optional>
+
+struct Vertex
+{
+  float pos[2];
+  float color[3];
+};
 
 class VisualEngine
 {
@@ -28,6 +36,7 @@ private:
   static std::shared_ptr<Vulkan::SwapChain> swapchain;
   static std::shared_ptr<Vulkan::RenderPass> render_pass;
   static std::shared_ptr<Vulkan::GraphicPipeline> g_pipeline;
+  static std::shared_ptr<Vulkan::VertexArray<Vertex>> input_vertex_array;
   static size_t height;
   static size_t width;
   static GLFWwindow *window;
