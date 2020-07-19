@@ -5,7 +5,7 @@ std::shared_ptr<Vulkan::Device> VisualEngine::device;
 std::shared_ptr<Vulkan::SwapChain> VisualEngine::swapchain;
 std::shared_ptr<Vulkan::RenderPass> VisualEngine::render_pass;
 std::shared_ptr<Vulkan::GraphicPipeline> VisualEngine::g_pipeline;
-std::shared_ptr<Vulkan::VertexArray<Vertex>> VisualEngine::input_vertex_array;
+std::shared_ptr<Vulkan::TransferArray<Vertex>> VisualEngine::input_vertex_array;
 VkCommandPool VisualEngine::command_pool;
 std::vector<VkCommandBuffer> VisualEngine::command_buffers;
 std::vector<VkSemaphore> VisualEngine::image_available_semaphores;
@@ -49,21 +49,24 @@ VisualEngine::VisualEngine()
     {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
   };
 
-  std::vector<Vulkan::VertexDescription> vertex_descriptions = 
+  std::vector<VertexDescription> vertex_descriptions = 
   {
     {offsetof(Vertex, pos), VK_FORMAT_R32G32_SFLOAT},
     {offsetof(Vertex, color), VK_FORMAT_R32G32B32_SFLOAT}
   };
-  input_vertex_array = std::make_shared<Vulkan::VertexArray<Vertex>>(device, vertices);
+  input_vertex_array = std::make_shared<Vulkan::TransferArray<Vertex>>(device, Vulkan::StorageType::Vertex);
+  *input_vertex_array = vertices;
 
   std::vector<VkVertexInputBindingDescription> binding_description(1);
   std::vector<VkVertexInputAttributeDescription> attribute_descriptions;
-  input_vertex_array->GetVertexInputBindingDescription(0, vertex_descriptions, binding_description[0], attribute_descriptions);
+  GetVertexInputBindingDescription(0, vertex_descriptions, binding_description[0], attribute_descriptions);
 
   g_pipeline->SetShaderInfos(shader_infos);
   g_pipeline->SetVertexInputBindingDescription(binding_description, attribute_descriptions);
 
   WriteCommandBuffers();
+
+  input_vertex_array->MoveData(command_pool);
 
   VkSemaphoreCreateInfo semaphore_info = {};
   semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -151,7 +154,7 @@ void VisualEngine::WriteCommandBuffers()
   render_pass_info.clearValueCount = 1;
   render_pass_info.pClearValues = &clear_color;
 
-  VkBuffer vertex_buffers[] = { input_vertex_array->GetBuffer() };
+  VkBuffer vertex_buffers[] = { input_vertex_array->GetDstBuffer() };
   VkDeviceSize offsets[] = { 0 };
 
   for (size_t i = 0; i < command_buffers.size(); ++i)
@@ -243,4 +246,23 @@ void VisualEngine::DrawFrame()
   vkQueuePresentKHR(device->GetPresentQueue(), &present_info);
 
   current_frame = (current_frame + 1) % frames_in_pipeline;
+}
+
+void VisualEngine::GetVertexInputBindingDescription(uint32_t binding, std::vector<VertexDescription> vertex_descriptions, VkVertexInputBindingDescription &out_binding_description, std::vector<VkVertexInputAttributeDescription> &out_attribute_descriptions)
+{
+  if (vertex_descriptions.empty())
+    throw std::runtime_error("Vertex description is empty.");
+    
+  out_binding_description.binding = binding;
+  out_binding_description.stride = sizeof(Vertex);
+  out_binding_description.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+  out_attribute_descriptions.resize(vertex_descriptions.size());
+  for (size_t i = 0; i < out_attribute_descriptions.size(); ++i)
+  {
+    out_attribute_descriptions[i].binding = binding;
+    out_attribute_descriptions[i].location = i;
+    out_attribute_descriptions[i].format = vertex_descriptions[i].format;
+    out_attribute_descriptions[i].offset = vertex_descriptions[i].offset;
+  }
 }

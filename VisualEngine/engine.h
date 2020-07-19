@@ -9,7 +9,7 @@
 #include "../VK-nn/Vulkan/SwapChain.h"
 #include "../VK-nn/Vulkan/GraphicPipeline.h"
 #include "../VK-nn/Vulkan/RenderPass.h"
-#include "../VK-nn/Vulkan/VertexArray.h"
+#include "../VK-nn/Vulkan/TransferArray.h"
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -26,6 +26,12 @@ struct Vertex
   float color[3];
 };
 
+struct VertexDescription
+{
+  uint32_t offset = 0;
+  VkFormat format = VK_FORMAT_R32G32_SFLOAT;
+};
+
 class VisualEngine
 {
 private:
@@ -36,7 +42,7 @@ private:
   static std::shared_ptr<Vulkan::SwapChain> swapchain;
   static std::shared_ptr<Vulkan::RenderPass> render_pass;
   static std::shared_ptr<Vulkan::GraphicPipeline> g_pipeline;
-  static std::shared_ptr<Vulkan::VertexArray<Vertex>> input_vertex_array;
+  static std::shared_ptr<Vulkan::TransferArray<Vertex>> input_vertex_array;
   static size_t height;
   static size_t width;
   static GLFWwindow *window;
@@ -56,6 +62,7 @@ private:
 
   static void WriteCommandBuffers();
   static void DrawFrame();
+  static void GetVertexInputBindingDescription(uint32_t binding, std::vector<VertexDescription> vertex_descriptions, VkVertexInputBindingDescription &out_binding_description, std::vector<VkVertexInputAttributeDescription> &out_attribute_descriptions);
 public:
   VisualEngine();
   VisualEngine(const VisualEngine &obj) = delete;

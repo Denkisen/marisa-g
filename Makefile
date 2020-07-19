@@ -6,7 +6,7 @@ SHADERSCOMPILER = glslangValidator
 
 CXXFLAGS = -std=c++17 -fopenmp -O0 -g -Wall -Warray-bounds -Wdiv-by-zero -fno-omit-frame-pointer
 CXXFLAGS += -DDEBUG
-#CXXFLAGS += -fsanitize=address -fsanitize=undefined -fsanitize=bounds -fsanitize=bounds-strict
+CXXFLAGS += #-fsanitize=address -fsanitize=undefined -fsanitize=bounds -fsanitize=bounds-strict
 
 LDFLAGS = -lgomp -lvulkan `pkg-config --static --libs glfw3`
 
