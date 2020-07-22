@@ -26,47 +26,46 @@ struct Vertex
   float color[3];
 };
 
-struct VertexDescription
-{
-  uint32_t offset = 0;
-  VkFormat format = VK_FORMAT_R32G32_SFLOAT;
-};
-
 class VisualEngine
 {
 private:
-  static size_t frames_in_pipeline;
-  static size_t current_frame;
-  static Vulkan::Instance instance;
-  static std::shared_ptr<Vulkan::Device> device;
-  static std::shared_ptr<Vulkan::SwapChain> swapchain;
-  static std::shared_ptr<Vulkan::RenderPass> render_pass;
-  static std::shared_ptr<Vulkan::GraphicPipeline> g_pipeline;
-  static std::shared_ptr<Vulkan::TransferArray<Vertex>> input_vertex_array;
-  static size_t height;
-  static size_t width;
-  static GLFWwindow *window;
-  static std::thread event_handler_thread;
-  static VkCommandPool command_pool;
-  static std::vector<VkCommandBuffer> command_buffers;
-  static std::vector<VkSemaphore> image_available_semaphores;
-  static std::vector<VkSemaphore> render_finished_semaphores;
-  static std::vector<VkFence> in_queue_fences;
-  static std::vector<VkFence> images_in_process;
-  static std::vector<Vulkan::ShaderInfo> shader_infos;
+  size_t frames_in_pipeline = 0;
+  size_t current_frame = 0;
+  Vulkan::Instance instance;
+  std::shared_ptr<Vulkan::Device> device;
+  std::shared_ptr<Vulkan::SwapChain> swapchain;
+  std::shared_ptr<Vulkan::RenderPass> render_pass;
+  std::shared_ptr<Vulkan::GraphicPipeline> g_pipeline;
+  std::shared_ptr<Vulkan::TransferArray<Vertex>> input_vertex_array;
+  std::shared_ptr<Vulkan::TransferArray<uint16_t>> input_index_array;
+  size_t height = 768;
+  size_t width = 1024;
+  GLFWwindow *window;
+  std::thread event_handler_thread;
+  VkCommandPool command_pool = VK_NULL_HANDLE;
+  std::vector<VkCommandBuffer> command_buffers;
+  std::vector<VkSemaphore> image_available_semaphores;
+  std::vector<VkSemaphore> render_finished_semaphores;
+  std::vector<VkFence> in_queue_fences;
+  std::vector<VkFence> images_in_process;
+  std::vector<Vulkan::ShaderInfo> shader_infos;
+  bool resize_flag;
 
-  static bool resize_flag;
+  void WriteCommandBuffers();
+  void DrawFrame();
+  void EventHadler();
+  void PrepareShaders();
+  void PrepareWindow();
+  void PrepareSyncPrimitives();
+  void ReBuildPipelines();
 
-  static void EventHadler();
-  static void FrameBufferResizeCallback(GLFWwindow* window, int width, int height);
-
-  static void WriteCommandBuffers();
-  static void DrawFrame();
-  static void GetVertexInputBindingDescription(uint32_t binding, std::vector<VertexDescription> vertex_descriptions, VkVertexInputBindingDescription &out_binding_description, std::vector<VkVertexInputAttributeDescription> &out_attribute_descriptions);
+  static void FrameBufferResizeCallback(GLFWwindow* window, int width, int height);  
+  static void Draw(VisualEngine &obj);
 public:
   VisualEngine();
   VisualEngine(const VisualEngine &obj) = delete;
   VisualEngine& operator= (const VisualEngine &obj) = delete;
+  void Start();
   ~VisualEngine();
 };
 

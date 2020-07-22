@@ -1,100 +1,10 @@
 #include "engine.h"
 
-Vulkan::Instance VisualEngine::instance;
-std::shared_ptr<Vulkan::Device> VisualEngine::device;
-std::shared_ptr<Vulkan::SwapChain> VisualEngine::swapchain;
-std::shared_ptr<Vulkan::RenderPass> VisualEngine::render_pass;
-std::shared_ptr<Vulkan::GraphicPipeline> VisualEngine::g_pipeline;
-std::shared_ptr<Vulkan::TransferArray<Vertex>> VisualEngine::input_vertex_array;
-VkCommandPool VisualEngine::command_pool;
-std::vector<VkCommandBuffer> VisualEngine::command_buffers;
-std::vector<VkSemaphore> VisualEngine::image_available_semaphores;
-std::vector<VkSemaphore> VisualEngine::render_finished_semaphores;
-std::vector<VkFence> VisualEngine::in_queue_fences;
-std::vector<VkFence> VisualEngine::images_in_process;
-std::vector<Vulkan::ShaderInfo> VisualEngine::shader_infos;
-size_t VisualEngine::height = 768;
-size_t VisualEngine::width = 1024;
-size_t VisualEngine::frames_in_pipeline = 10;
-size_t VisualEngine::current_frame = 0;
-GLFWwindow * VisualEngine::window = nullptr;
-std::thread VisualEngine::event_handler_thread;
-
-bool VisualEngine::resize_flag = false;
-
-VisualEngine::VisualEngine()
-{    
-  glfwInit();
-  glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-  glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
-
-  window = glfwCreateWindow(width, height, instance.AppName().c_str(), nullptr, nullptr);
-  glfwSetWindowUserPointer(window, this);
-  glfwSetFramebufferSizeCallback(window, FrameBufferResizeCallback);
-
-  device = std::make_shared<Vulkan::Device>(Vulkan::PhysicalDeviceType::Discrete, Vulkan::QueueType::DrawingType, window);
-  swapchain = std::make_shared<Vulkan::SwapChain>(device);
-  render_pass = std::make_shared<Vulkan::RenderPass>(device, swapchain);
-  shader_infos.resize(2);
-  shader_infos[0] = {"main", "bin/vert.spv", Vulkan::ShaderType::Vertex};
-  shader_infos[1] = {"main", "bin/frag.spv", Vulkan::ShaderType::Fragment};
-
-  g_pipeline = std::make_shared<Vulkan::GraphicPipeline>(device, swapchain, render_pass);
-  command_pool = Vulkan::Supply::CreateCommandPool(device->GetDevice(), device->GetGraphicFamilyQueueIndex().value());
-
-  std::vector<Vertex> vertices = 
-  {
-    {{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-    {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-    {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
-  };
-
-  std::vector<VertexDescription> vertex_descriptions = 
-  {
-    {offsetof(Vertex, pos), VK_FORMAT_R32G32_SFLOAT},
-    {offsetof(Vertex, color), VK_FORMAT_R32G32B32_SFLOAT}
-  };
-  input_vertex_array = std::make_shared<Vulkan::TransferArray<Vertex>>(device, Vulkan::StorageType::Vertex);
-  *input_vertex_array = vertices;
-
-  std::vector<VkVertexInputBindingDescription> binding_description(1);
-  std::vector<VkVertexInputAttributeDescription> attribute_descriptions;
-  GetVertexInputBindingDescription(0, vertex_descriptions, binding_description[0], attribute_descriptions);
-
-  g_pipeline->SetShaderInfos(shader_infos);
-  g_pipeline->SetVertexInputBindingDescription(binding_description, attribute_descriptions);
-
-  WriteCommandBuffers();
-
-  input_vertex_array->MoveData(command_pool);
-
-  VkSemaphoreCreateInfo semaphore_info = {};
-  semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-  VkFenceCreateInfo fence_info = {};
-  fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-  fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-
-  image_available_semaphores.resize(frames_in_pipeline);
-  render_finished_semaphores.resize(frames_in_pipeline);
-  in_queue_fences.resize(frames_in_pipeline);
-  images_in_process.resize(swapchain->GetImageViewsCount(), VK_NULL_HANDLE);
-
-  for (size_t i = 0; i < frames_in_pipeline; ++i)
-  {
-    if (vkCreateSemaphore(device->GetDevice(), &semaphore_info, nullptr, &render_finished_semaphores[i]) != VK_SUCCESS)
-      throw std::runtime_error("failed to create semaphores!");
-    if (vkCreateSemaphore(device->GetDevice(), &semaphore_info, nullptr, &image_available_semaphores[i]) != VK_SUCCESS)
-      throw std::runtime_error("failed to create semaphores!");
-    if (vkCreateFence(device->GetDevice(), &fence_info, nullptr, &in_queue_fences[i]) != VK_SUCCESS)
-      throw std::runtime_error("failed to create fence!");
-  }
-
-  event_handler_thread = std::thread(EventHadler);
-}
-
 VisualEngine::~VisualEngine()
 {
-  event_handler_thread.join();
+#ifdef DEBUG
+      std::cout << __func__ << std::endl;
+#endif
 
   for (size_t i = 0; i < frames_in_pipeline; ++i)
   {
@@ -112,12 +22,80 @@ VisualEngine::~VisualEngine()
   glfwTerminate();
 }
 
+VisualEngine::VisualEngine()
+{
+  glfwInit();
+  PrepareWindow();
+
+  std::vector<Vulkan::VertexDescription> vertex_descriptions = 
+  {
+    {offsetof(Vertex, pos), VK_FORMAT_R32G32_SFLOAT},
+    {offsetof(Vertex, color), VK_FORMAT_R32G32B32_SFLOAT}
+  };
+
+  std::vector<VkVertexInputBindingDescription> binding_description(1);
+  std::vector<VkVertexInputAttributeDescription> attribute_descriptions;
+
+  device = std::make_shared<Vulkan::Device>(Vulkan::PhysicalDeviceType::Discrete, Vulkan::QueueType::DrawingType, window);
+  swapchain = std::make_shared<Vulkan::SwapChain>(device);
+  render_pass = std::make_shared<Vulkan::RenderPass>(device, swapchain);
+  g_pipeline = std::make_shared<Vulkan::GraphicPipeline>(device, swapchain, render_pass);
+
+  input_vertex_array = std::make_shared<Vulkan::TransferArray<Vertex>>(device, Vulkan::StorageType::Vertex); 
+  input_index_array = std::make_shared<Vulkan::TransferArray<uint16_t>>(device, Vulkan::StorageType::Index); 
+
+  command_pool = Vulkan::Supply::CreateCommandPool(device->GetDevice(), device->GetGraphicFamilyQueueIndex().value());
+
+  frames_in_pipeline = swapchain->GetImageViewsCount() + 5;
+
+  PrepareShaders();
+  g_pipeline->SetShaderInfos(shader_infos); 
+ 
+  Vulkan::Supply::GetVertexInputBindingDescription<Vertex>(0, vertex_descriptions, binding_description[0], attribute_descriptions);
+  g_pipeline->SetVertexInputBindingDescription(binding_description, attribute_descriptions);
+
+  WriteCommandBuffers();
+  // const std::vector<Vertex> vertices = 
+  // {
+  //   {{0.0f, -0.5f}, {1.0f, 1.0f, 1.0f}},
+  //   {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+  //   {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+  // };
+  const std::vector<Vertex> vertices = 
+  {
+    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
+  };
+
+  const std::vector<uint16_t> indices = 
+  {
+    0, 1, 2, 2, 3, 0
+  };
+
+  *input_vertex_array = vertices;
+  input_vertex_array->MoveData(command_pool);
+
+  *input_index_array = indices;
+  input_index_array->MoveData(command_pool);
+
+  PrepareSyncPrimitives();
+}
+
+void VisualEngine::Start()
+{
+  event_handler_thread = std::thread(&VisualEngine::EventHadler, this);
+  if (event_handler_thread.joinable())
+    event_handler_thread.join();
+}
+
 void VisualEngine::EventHadler()
 {
   while (!glfwWindowShouldClose(window)) 
   {
     glfwPollEvents();
-    DrawFrame();
+    Draw(*this);
   }
   vkDeviceWaitIdle(device->GetDevice());
 }
@@ -126,6 +104,11 @@ void VisualEngine::FrameBufferResizeCallback(GLFWwindow* window, int width, int 
 {
   auto app = reinterpret_cast<VisualEngine*>(glfwGetWindowUserPointer(window));
   app->resize_flag = true;
+}
+
+void VisualEngine::Draw(VisualEngine &obj)
+{
+  obj.DrawFrame();
 }
 
 void VisualEngine::WriteCommandBuffers()
@@ -154,7 +137,7 @@ void VisualEngine::WriteCommandBuffers()
   render_pass_info.clearValueCount = 1;
   render_pass_info.pClearValues = &clear_color;
 
-  VkBuffer vertex_buffers[] = { input_vertex_array->GetDstBuffer() };
+  VkBuffer vertex_buffers[] = { input_vertex_array->GetBuffer() };
   VkDeviceSize offsets[] = { 0 };
 
   for (size_t i = 0; i < command_buffers.size(); ++i)
@@ -165,11 +148,12 @@ void VisualEngine::WriteCommandBuffers()
 
     render_pass_info.framebuffer = f_buffers[i];
     vkCmdBindVertexBuffers(command_buffers[i], 0, 1, vertex_buffers, offsets);
+    vkCmdBindIndexBuffer(command_buffers[i], input_index_array->GetBuffer(), 0, VK_INDEX_TYPE_UINT16);
     vkCmdBeginRenderPass(command_buffers[i], &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
-    
+  
     vkCmdBindPipeline(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, g_pipeline->GetPipeline());
 
-    vkCmdDraw(command_buffers[i], input_vertex_array->GetElementsCount(), 1, 0, 0);
+    vkCmdDrawIndexed(command_buffers[i], input_index_array->GetElementsCount(), 1, 0, 0, 0);
     vkCmdEndRenderPass(command_buffers[i]);
     if (vkEndCommandBuffer(command_buffers[i]) != VK_SUCCESS) 
     {
@@ -188,20 +172,7 @@ void VisualEngine::DrawFrame()
   {
     if (res == VK_SUBOPTIMAL_KHR || res == VK_ERROR_OUT_OF_DATE_KHR || resize_flag)
     {
-      int width = 0, height = 0;
-      do
-      {
-        glfwGetFramebufferSize(window, &width, &height);
-        glfwWaitEvents();
-      } while (width == 0 || height == 0);
-      
-      vkDeviceWaitIdle(device->GetDevice());
-      resize_flag = false;
-      swapchain->ReBuildSwapChain();
-      render_pass->ReBuildRenderPass();
-      g_pipeline->ReBuildPipeline();
-
-      WriteCommandBuffers();
+      ReBuildPipelines();
       return;
     }
     else
@@ -248,21 +219,63 @@ void VisualEngine::DrawFrame()
   current_frame = (current_frame + 1) % frames_in_pipeline;
 }
 
-void VisualEngine::GetVertexInputBindingDescription(uint32_t binding, std::vector<VertexDescription> vertex_descriptions, VkVertexInputBindingDescription &out_binding_description, std::vector<VkVertexInputAttributeDescription> &out_attribute_descriptions)
+void VisualEngine::PrepareShaders()
 {
-  if (vertex_descriptions.empty())
-    throw std::runtime_error("Vertex description is empty.");
-    
-  out_binding_description.binding = binding;
-  out_binding_description.stride = sizeof(Vertex);
-  out_binding_description.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+  shader_infos.resize(2);
+  shader_infos[0] = {"main", "bin/vert.spv", Vulkan::ShaderType::Vertex};
+  shader_infos[1] = {"main", "bin/frag.spv", Vulkan::ShaderType::Fragment};
+}
 
-  out_attribute_descriptions.resize(vertex_descriptions.size());
-  for (size_t i = 0; i < out_attribute_descriptions.size(); ++i)
+void VisualEngine::PrepareWindow()
+{
+  glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+  glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+
+  window = glfwCreateWindow(width, height, instance.AppName().c_str(), nullptr, nullptr);
+
+  glfwSetWindowUserPointer(window, this);
+  glfwSetFramebufferSizeCallback(window, FrameBufferResizeCallback);
+}
+
+void VisualEngine::PrepareSyncPrimitives()
+{
+  VkSemaphoreCreateInfo semaphore_info = {};
+  semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+  VkFenceCreateInfo fence_info = {};
+  fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+  fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+  image_available_semaphores.resize(frames_in_pipeline);
+  render_finished_semaphores.resize(frames_in_pipeline);
+  in_queue_fences.resize(frames_in_pipeline);
+  images_in_process.resize(swapchain->GetImageViewsCount(), VK_NULL_HANDLE);
+
+  for (size_t i = 0; i < frames_in_pipeline; ++i)
   {
-    out_attribute_descriptions[i].binding = binding;
-    out_attribute_descriptions[i].location = i;
-    out_attribute_descriptions[i].format = vertex_descriptions[i].format;
-    out_attribute_descriptions[i].offset = vertex_descriptions[i].offset;
+    if (vkCreateSemaphore(device->GetDevice(), &semaphore_info, nullptr, &render_finished_semaphores[i]) != VK_SUCCESS)
+      throw std::runtime_error("failed to create semaphores!");
+    if (vkCreateSemaphore(device->GetDevice(), &semaphore_info, nullptr, &image_available_semaphores[i]) != VK_SUCCESS)
+      throw std::runtime_error("failed to create semaphores!");
+    if (vkCreateFence(device->GetDevice(), &fence_info, nullptr, &in_queue_fences[i]) != VK_SUCCESS)
+      throw std::runtime_error("failed to create fence!");
   }
 }
+
+void VisualEngine::ReBuildPipelines()
+{
+  int width = 0, height = 0;
+  do
+  {
+    glfwGetFramebufferSize(window, &width, &height);
+    glfwWaitEvents();
+  } while (width == 0 || height == 0);
+      
+  vkDeviceWaitIdle(device->GetDevice());
+  resize_flag = false;
+  swapchain->ReBuildSwapChain();
+  render_pass->ReBuildRenderPass();
+  g_pipeline->ReBuildPipeline();
+
+  WriteCommandBuffers();
+}
+
