@@ -10,20 +10,34 @@
 #include "../VK-nn/Vulkan/GraphicPipeline.h"
 #include "../VK-nn/Vulkan/RenderPass.h"
 #include "../VK-nn/Vulkan/TransferArray.h"
+#include "../VK-nn/Vulkan/Descriptors.h"
+#include "../VK-nn/Vulkan/IStorage.h"
 
 #define GLFW_INCLUDE_VULKAN
+#define GLM_FORCE_RADIANS
+#define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <iostream>
 #include <vector>
 #include <memory>
 #include <thread>
 #include <optional>
+#include <chrono>
 
 struct Vertex
 {
-  float pos[2];
-  float color[3];
+  glm::vec2 pos;
+  glm::vec3 color;
+};
+
+struct World 
+{
+  glm::mat4 model;
+  glm::mat4 view;
+  glm::mat4 proj;
 };
 
 class VisualEngine
@@ -38,6 +52,8 @@ private:
   std::shared_ptr<Vulkan::GraphicPipeline> g_pipeline;
   std::shared_ptr<Vulkan::TransferArray<Vertex>> input_vertex_array;
   std::shared_ptr<Vulkan::TransferArray<uint16_t>> input_index_array;
+  std::vector<std::shared_ptr<Vulkan::UniformBuffer<World>>> world_uniform_buffers;
+  std::shared_ptr<Vulkan::Descriptors> descriptors;
   size_t height = 768;
   size_t width = 1024;
   GLFWwindow *window;
@@ -58,6 +74,7 @@ private:
   void PrepareWindow();
   void PrepareSyncPrimitives();
   void ReBuildPipelines();
+  void UpdateWorldUniformBuffers(uint32_t image_index);
 
   static void FrameBufferResizeCallback(GLFWwindow* window, int width, int height);  
   static void Draw(VisualEngine &obj);

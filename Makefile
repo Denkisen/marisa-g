@@ -6,7 +6,7 @@ SHADERSCOMPILER = glslangValidator
 
 CXXFLAGS = -std=c++17 -fopenmp -O0 -g -Wall -Warray-bounds -Wdiv-by-zero -fno-omit-frame-pointer
 CXXFLAGS += -DDEBUG
-CXXFLAGS += #-fsanitize=address -fsanitize=undefined -fsanitize=bounds -fsanitize=bounds-strict
+CXXFLAGS += -fsanitize=address -fsanitize=undefined -fsanitize=bounds -fsanitize=bounds-strict
 
 LDFLAGS = -lgomp -lvulkan `pkg-config --static --libs glfw3`
 
@@ -23,7 +23,7 @@ OBJECTS = $(notdir $(SOURCE:.cpp=.o))
 .PHONY: prepere run clean dbg shaders build
 
 all:
-	$(MAKE) -j12 build 
+	$(MAKE) -j12 build shaders
 
 $(BIN_DIR)/$(APP_NAME): $(addprefix $(BUILD_DIR)/,$(OBJECTS))
 	$(CXX) -o $(BIN_DIR)/$(APP_NAME) $(addprefix $(BUILD_DIR)/,$(OBJECTS)) $(CXXFLAGS) $(LDFLAGS)
@@ -31,7 +31,7 @@ $(BIN_DIR)/$(APP_NAME): $(addprefix $(BUILD_DIR)/,$(OBJECTS))
 $(BUILD_DIR)/%.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c $^ -o $@
 
-build: prepere $(BIN_DIR)/$(APP_NAME) shaders
+build: prepere $(BIN_DIR)/$(APP_NAME) 
 
 prepere:
 	mkdir -p $(BUILD_DIR)

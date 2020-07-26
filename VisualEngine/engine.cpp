@@ -8,11 +8,11 @@ VisualEngine::~VisualEngine()
 
   for (size_t i = 0; i < frames_in_pipeline; ++i)
   {
-    if (in_queue_fences[i] != VK_NULL_HANDLE)
+    if (!in_queue_fences.empty() && in_queue_fences[i] != VK_NULL_HANDLE)
       vkDestroyFence(device->GetDevice(), in_queue_fences[i], nullptr);
-    if (image_available_semaphores[i] != VK_NULL_HANDLE)
+    if (!image_available_semaphores.empty() && image_available_semaphores[i] != VK_NULL_HANDLE)
       vkDestroySemaphore(device->GetDevice(), image_available_semaphores[i], nullptr);    
-    if (render_finished_semaphores[i] != VK_NULL_HANDLE)
+    if (!render_finished_semaphores.empty() && render_finished_semaphores[i] != VK_NULL_HANDLE)
       vkDestroySemaphore(device->GetDevice(), render_finished_semaphores[i], nullptr);
   }
 
@@ -44,15 +44,26 @@ VisualEngine::VisualEngine()
   input_vertex_array = std::make_shared<Vulkan::TransferArray<Vertex>>(device, Vulkan::StorageType::Vertex); 
   input_index_array = std::make_shared<Vulkan::TransferArray<uint16_t>>(device, Vulkan::StorageType::Index); 
 
+  descriptors = std::make_shared<Vulkan::Descriptors>(device);
   command_pool = Vulkan::Supply::CreateCommandPool(device->GetDevice(), device->GetGraphicFamilyQueueIndex().value());
 
   frames_in_pipeline = swapchain->GetImageViewsCount() + 5;
 
+  std::vector<std::shared_ptr<Vulkan::IStorage>> buffs;
+  for (size_t i = 0; i < swapchain->GetImageViewsCount(); ++i)
+  {
+    world_uniform_buffers.push_back(std::make_shared<Vulkan::UniformBuffer<World>>(device));
+    buffs.push_back(world_uniform_buffers[world_uniform_buffers.size() - 1]);
+  }
+
+  descriptors->Add(buffs, VK_SHADER_STAGE_VERTEX_BIT, true);
+  descriptors->Build();
   PrepareShaders();
   g_pipeline->SetShaderInfos(shader_infos); 
  
   Vulkan::Supply::GetVertexInputBindingDescription<Vertex>(0, vertex_descriptions, binding_description[0], attribute_descriptions);
   g_pipeline->SetVertexInputBindingDescription(binding_description, attribute_descriptions);
+  g_pipeline->SetDescriptorsSetLayouts(descriptors->GetDescriptorSetLayout(0));
 
   WriteCommandBuffers();
   // const std::vector<Vertex> vertices = 
@@ -139,6 +150,7 @@ void VisualEngine::WriteCommandBuffers()
 
   VkBuffer vertex_buffers[] = { input_vertex_array->GetBuffer() };
   VkDeviceSize offsets[] = { 0 };
+  std::vector<VkDescriptorSet> descriptor_sets = descriptors->GetDescriptorSet(0);
 
   for (size_t i = 0; i < command_buffers.size(); ++i)
   {
@@ -153,6 +165,7 @@ void VisualEngine::WriteCommandBuffers()
   
     vkCmdBindPipeline(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, g_pipeline->GetPipeline());
 
+    vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, g_pipeline->GetPipelineLayout(), 0, 1, &descriptor_sets[i], 0, nullptr);
     vkCmdDrawIndexed(command_buffers[i], input_index_array->GetElementsCount(), 1, 0, 0, 0);
     vkCmdEndRenderPass(command_buffers[i]);
     if (vkEndCommandBuffer(command_buffers[i]) != VK_SUCCESS) 
@@ -160,6 +173,19 @@ void VisualEngine::WriteCommandBuffers()
       throw std::runtime_error("Failed to record command buffer!");
     }
   }
+}
+
+void VisualEngine::UpdateWorldUniformBuffers(uint32_t image_index)
+{
+  static auto start_time = std::chrono::high_resolution_clock::now();
+  auto current_time = std::chrono::high_resolution_clock::now();
+  float time = std::chrono::duration<float, std::chrono::seconds::period>(current_time - start_time).count();
+  World bf = {};
+  bf.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+  bf.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+  bf.proj = glm::perspective(glm::radians(45.0f), swapchain->GetExtent().width / (float) swapchain->GetExtent().height, 0.1f, 10.0f);
+  bf.proj[1][1] *= -1;
+  *world_uniform_buffers[image_index] = bf;
 }
 
 void VisualEngine::DrawFrame()
@@ -185,6 +211,8 @@ void VisualEngine::DrawFrame()
   }
 
   images_in_process[image_index] = in_queue_fences[image_index];
+
+  UpdateWorldUniformBuffers(image_index);
 
   VkSemaphore wait_semaphores[] = { image_available_semaphores[current_frame] };  
   VkSemaphore signal_semaphores[] = { render_finished_semaphores[current_frame] };
