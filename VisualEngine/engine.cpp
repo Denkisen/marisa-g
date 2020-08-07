@@ -66,12 +66,6 @@ VisualEngine::VisualEngine()
   g_pipeline->SetDescriptorsSetLayouts(descriptors->GetDescriptorSetLayout(0));
 
   WriteCommandBuffers();
-  // const std::vector<Vertex> vertices = 
-  // {
-  //   {{0.0f, -0.5f}, {1.0f, 1.0f, 1.0f}},
-  //   {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-  //   {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
-  // };
   const std::vector<Vertex> vertices = 
   {
     {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
@@ -250,8 +244,8 @@ void VisualEngine::DrawFrame()
 void VisualEngine::PrepareShaders()
 {
   shader_infos.resize(2);
-  shader_infos[0] = {"main", "bin/vert.spv", Vulkan::ShaderType::Vertex};
-  shader_infos[1] = {"main", "bin/frag.spv", Vulkan::ShaderType::Fragment};
+  shader_infos[0] = {"main", "tri.vert.spv", Vulkan::ShaderType::Vertex};
+  shader_infos[1] = {"main", "tri.frag.spv", Vulkan::ShaderType::Fragment};
 }
 
 void VisualEngine::PrepareWindow()

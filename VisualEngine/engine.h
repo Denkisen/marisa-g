@@ -12,6 +12,7 @@
 #include "../VK-nn/Vulkan/TransferArray.h"
 #include "../VK-nn/Vulkan/Descriptors.h"
 #include "../VK-nn/Vulkan/IStorage.h"
+#include "../VK-nn/libs/Image.h"
 
 #define GLFW_INCLUDE_VULKAN
 #define GLM_FORCE_RADIANS
