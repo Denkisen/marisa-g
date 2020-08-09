@@ -12,7 +12,9 @@
 #include "../VK-nn/Vulkan/TransferArray.h"
 #include "../VK-nn/Vulkan/Descriptors.h"
 #include "../VK-nn/Vulkan/IStorage.h"
-#include "../VK-nn/libs/Image.h"
+#include "../VK-nn/Vulkan/CommandPool.h"
+#include "../VK-nn/libs/ImageBuffer.h"
+
 
 #define GLFW_INCLUDE_VULKAN
 #define GLM_FORCE_RADIANS
@@ -55,12 +57,11 @@ private:
   std::shared_ptr<Vulkan::TransferArray<uint16_t>> input_index_array;
   std::vector<std::shared_ptr<Vulkan::UniformBuffer<World>>> world_uniform_buffers;
   std::shared_ptr<Vulkan::Descriptors> descriptors;
+  std::shared_ptr<Vulkan::CommandPool> command_pool;
   size_t height = 768;
   size_t width = 1024;
   GLFWwindow *window;
   std::thread event_handler_thread;
-  VkCommandPool command_pool = VK_NULL_HANDLE;
-  std::vector<VkCommandBuffer> command_buffers;
   std::vector<VkSemaphore> image_available_semaphores;
   std::vector<VkSemaphore> render_finished_semaphores;
   std::vector<VkFence> in_queue_fences;

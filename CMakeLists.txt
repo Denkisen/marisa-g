@@ -15,6 +15,9 @@ set_directory_properties(PROPERTIES
 find_package(Vulkan REQUIRED)
 find_package(glfw3 REQUIRED)
 find_package(OpenMP REQUIRED)
+find_package(OpenCV REQUIRED)
+
+include_directories(${OpenCV_INCLUDE_DIRS})
 
 # Main
 add_executable(${RUNTIME_OUTPUT_NAME} main.cpp)
@@ -36,6 +39,7 @@ set_target_properties(${RUNTIME_OUTPUT_NAME} PROPERTIES
 set_target_properties(${RUNTIME_OUTPUT_NAME}
   PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+  CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/build"
 )
 
 target_link_libraries(${RUNTIME_OUTPUT_NAME}
@@ -43,6 +47,9 @@ target_link_libraries(${RUNTIME_OUTPUT_NAME}
   ${OpenMP_LIBRARIES}
   ${Vulkan_LIBRARIES}
   ${glfw3_LIBRARIES}
+  opencv_core
+  opencv_imgproc
+  opencv_imgcodecs
 )
 
 #Shaders
@@ -68,13 +75,13 @@ add_custom_target(
 add_dependencies(${RUNTIME_OUTPUT_NAME} Shaders)
 
 # Parallel
-add_custom_target(p)
-add_custom_command(TARGET p
+add_custom_target(Parallel)
+add_custom_command(TARGET Parallel
   COMMAND make -j12
 )
 
 # Run
-add_custom_target(run DEPENDS p)
+add_custom_target(run DEPENDS Parallel)
 add_custom_command(TARGET run
   COMMAND cd bin && ./${RUNTIME_OUTPUT_NAME}
 )
