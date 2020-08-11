@@ -25,7 +25,7 @@ add_executable(${RUNTIME_OUTPUT_NAME} main.cpp)
 file(GLOB_RECURSE files 
   "VisualEngine/*.cpp"
   "VK-nn/Vulkan/*.cpp"
-  "VK-nn/libs*.cpp"
+  "VK-nn/libs/*.cpp"
 )
 foreach(file ${files})
   target_sources(${RUNTIME_OUTPUT_NAME} PRIVATE ${file})

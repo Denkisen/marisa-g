@@ -3,16 +3,14 @@
 
 #include "../VK-nn/Vulkan/Instance.h"
 #include "../VK-nn/Vulkan/Device.h"
-#include "../VK-nn/Vulkan/Array.h"
-#include "../VK-nn/Vulkan/UniformBuffer.h"
 #include "../VK-nn/Vulkan/Offload.h"
 #include "../VK-nn/Vulkan/SwapChain.h"
 #include "../VK-nn/Vulkan/GraphicPipeline.h"
 #include "../VK-nn/Vulkan/RenderPass.h"
-#include "../VK-nn/Vulkan/TransferArray.h"
 #include "../VK-nn/Vulkan/Descriptors.h"
-#include "../VK-nn/Vulkan/IStorage.h"
+#include "../VK-nn/Vulkan/Buffer.h"
 #include "../VK-nn/Vulkan/CommandPool.h"
+#include "../VK-nn/Vulkan/Image.h"
 #include "../VK-nn/libs/ImageBuffer.h"
 
 
@@ -53,11 +51,15 @@ private:
   std::shared_ptr<Vulkan::SwapChain> swapchain;
   std::shared_ptr<Vulkan::RenderPass> render_pass;
   std::shared_ptr<Vulkan::GraphicPipeline> g_pipeline;
-  std::shared_ptr<Vulkan::TransferArray<Vertex>> input_vertex_array;
-  std::shared_ptr<Vulkan::TransferArray<uint16_t>> input_index_array;
-  std::vector<std::shared_ptr<Vulkan::UniformBuffer<World>>> world_uniform_buffers;
+  std::shared_ptr<Vulkan::Buffer<Vertex>> input_vertex_array_src;
+  std::shared_ptr<Vulkan::Buffer<Vertex>> input_vertex_array_dst;
+  std::shared_ptr<Vulkan::Buffer<uint16_t>> input_index_array_src;
+  std::shared_ptr<Vulkan::Buffer<uint16_t>> input_index_array_dst;
+  std::vector<std::shared_ptr<Vulkan::Buffer<World>>> world_uniform_buffers;
+  std::shared_ptr<Vulkan::Image> texture_image;
   std::shared_ptr<Vulkan::Descriptors> descriptors;
   std::shared_ptr<Vulkan::CommandPool> command_pool;
+  ImageBuffer texture_data;
   size_t height = 768;
   size_t width = 1024;
   GLFWwindow *window;

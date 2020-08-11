@@ -41,19 +41,31 @@ VisualEngine::VisualEngine()
   render_pass = std::make_shared<Vulkan::RenderPass>(device, swapchain);
   g_pipeline = std::make_shared<Vulkan::GraphicPipeline>(device, swapchain, render_pass);
 
-  input_vertex_array = std::make_shared<Vulkan::TransferArray<Vertex>>(device, Vulkan::StorageType::Vertex); 
-  input_index_array = std::make_shared<Vulkan::TransferArray<uint16_t>>(device, Vulkan::StorageType::Index); 
+  input_vertex_array_src = std::make_shared<Vulkan::Buffer<Vertex>>(device, Vulkan::StorageType::Vertex, Vulkan::BufferUsage::Transfer_src); 
+  input_index_array_src = std::make_shared<Vulkan::Buffer<uint16_t>>(device, Vulkan::StorageType::Index, Vulkan::BufferUsage::Transfer_src); 
+
+  input_vertex_array_dst = std::make_shared<Vulkan::Buffer<Vertex>>(device, Vulkan::StorageType::Vertex, Vulkan::BufferUsage::Transfer_dst); 
+  input_index_array_dst = std::make_shared<Vulkan::Buffer<uint16_t>>(device, Vulkan::StorageType::Index, Vulkan::BufferUsage::Transfer_dst);
+
+  // texture_data.Load("../Resources/wall-texture.jpg", 4);
+  // texture_data.Resize(512, 512);
+  // texture_image = std::make_shared<Vulkan::Image>(device, texture_data.Width(), 
+  //                                                 texture_data.Height(), 
+  //                                                 texture_data.Channels(), 
+  //                                                 Vulkan::ImageTiling::Optimal, 
+  //                                                 Vulkan::ImageUsage::Transfer_Dst_Sampled);
 
   descriptors = std::make_shared<Vulkan::Descriptors>(device);
   command_pool = std::make_shared<Vulkan::CommandPool>(device, device->GetGraphicFamilyQueueIndex().value());
 
   frames_in_pipeline = swapchain->GetImageViewsCount() + 5;
 
-  std::vector<std::shared_ptr<Vulkan::IStorage>> buffs;
+  std::vector<std::shared_ptr<Vulkan::IBuffer>> buffs;
   for (size_t i = 0; i < swapchain->GetImageViewsCount(); ++i)
   {
-    world_uniform_buffers.push_back(std::make_shared<Vulkan::UniformBuffer<World>>(device));
-    buffs.push_back(world_uniform_buffers[world_uniform_buffers.size() - 1]);
+    world_uniform_buffers.push_back(std::make_shared<Vulkan::Buffer<World>>(device, Vulkan::StorageType::Uniform, Vulkan::BufferUsage::Transfer_src));
+    world_uniform_buffers[i]->AllocateBuffer(1);
+    buffs.push_back(world_uniform_buffers[i]);
   }
 
   descriptors->Add(buffs, VK_SHADER_STAGE_VERTEX_BIT, true);
@@ -65,7 +77,6 @@ VisualEngine::VisualEngine()
   g_pipeline->SetVertexInputBindingDescription(binding_description, attribute_descriptions);
   g_pipeline->SetDescriptorsSetLayouts(descriptors->GetDescriptorSetLayout(0));
 
-  WriteCommandBuffers();
   const std::vector<Vertex> vertices = 
   {
     {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
@@ -79,12 +90,15 @@ VisualEngine::VisualEngine()
     0, 1, 2, 2, 3, 0
   };
 
-  *input_vertex_array = vertices;
-  input_vertex_array->MoveData(command_pool->GetCommandPool());
+  *input_vertex_array_src = vertices;
+  *input_vertex_array_dst = vertices;
+  Vulkan::IBuffer::MoveData(device->GetDevice(), command_pool->GetCommandPool(), device->GetGraphicQueue(), input_vertex_array_src, input_vertex_array_dst);
 
-  *input_index_array = indices;
-  input_index_array->MoveData(command_pool->GetCommandPool());
+  *input_index_array_src = indices;
+  *input_index_array_dst = indices;
+  Vulkan::IBuffer::MoveData(device->GetDevice(), command_pool->GetCommandPool(), device->GetGraphicQueue(), input_index_array_src, input_index_array_dst);
 
+  WriteCommandBuffers();
   PrepareSyncPrimitives();
 }
 
@@ -124,12 +138,12 @@ void VisualEngine::WriteCommandBuffers()
   for (size_t i = 0; i < render_pass->GetFrameBuffersCount(); ++i)
   {
     command_pool->BeginCommandBuffer(i, VK_COMMAND_BUFFER_LEVEL_PRIMARY);
-    command_pool->BindVertexBuffers(i, { input_vertex_array->GetBuffer() }, { 0 }, 0, 1);
-    command_pool->BindIndexBuffer(i, input_index_array->GetBuffer(), VK_INDEX_TYPE_UINT16, 0);
+    command_pool->BindVertexBuffers(i, { input_vertex_array_dst->GetBuffer() }, { 0 }, 0, 1);
+    command_pool->BindIndexBuffer(i, input_index_array_dst->GetBuffer(), VK_INDEX_TYPE_UINT16, 0);
     command_pool->BeginRenderPass(i, render_pass->GetRenderPass(), frame_buffers[i], swapchain->GetExtent(), { 0, 0 });
     command_pool->BindPipeline(i, g_pipeline->GetPipeline(), VK_PIPELINE_BIND_POINT_GRAPHICS);
     command_pool->BindDescriptorSets(i, g_pipeline->GetPipelineLayout(), VK_PIPELINE_BIND_POINT_GRAPHICS, { descriptor_sets[i] }, {}, 0);
-    command_pool->DrawIndexed(i, input_index_array->GetElementsCount(), 0, 0, 1, 0);
+    command_pool->DrawIndexed(i, input_index_array_dst->ItemsCount(), 0, 0, 1, 0);
     command_pool->EndRenderPass(i);
     command_pool->EndCommandBuffer(i);
   }
