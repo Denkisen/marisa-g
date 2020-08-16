@@ -5,7 +5,7 @@ int main(int argc, char const *argv[])
 {
   try
   {
-    VisualEngine engine;
+    VisualEngine engine(argc, argv);
     engine.Start();
   } 
   catch(const std::exception& e)

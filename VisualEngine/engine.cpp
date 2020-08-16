@@ -22,15 +22,21 @@ VisualEngine::~VisualEngine()
   glfwTerminate();
 }
 
-VisualEngine::VisualEngine()
+VisualEngine::VisualEngine(int argc, char const *argv[])
 {
   glfwInit();
   PrepareWindow();
 
+  exec_directory = Vulkan::Supply::GetExecDirectory(argv[0]);
+
+  if (!std::filesystem::exists(exec_directory))
+    throw std::runtime_error("argv[0] is not a valid path.");
+
   std::vector<Vulkan::VertexDescription> vertex_descriptions = 
   {
     {offsetof(Vertex, pos), VK_FORMAT_R32G32_SFLOAT},
-    {offsetof(Vertex, color), VK_FORMAT_R32G32B32_SFLOAT}
+    {offsetof(Vertex, color), VK_FORMAT_R32G32B32_SFLOAT},
+    {offsetof(Vertex, texCoord), VK_FORMAT_R32G32_SFLOAT}
   };
 
   std::vector<VkVertexInputBindingDescription> binding_description(1);
@@ -41,48 +47,60 @@ VisualEngine::VisualEngine()
   render_pass = std::make_shared<Vulkan::RenderPass>(device, swapchain);
   g_pipeline = std::make_shared<Vulkan::GraphicPipeline>(device, swapchain, render_pass);
 
-  input_vertex_array_src = std::make_shared<Vulkan::Buffer<Vertex>>(device, Vulkan::StorageType::Vertex, Vulkan::BufferUsage::Transfer_src); 
-  input_index_array_src = std::make_shared<Vulkan::Buffer<uint16_t>>(device, Vulkan::StorageType::Index, Vulkan::BufferUsage::Transfer_src); 
+  input_vertex_array_src = std::make_shared<Vulkan::Buffer<Vertex>>(device, Vulkan::StorageType::Vertex, Vulkan::HostVisibleMemory::HostVisible);
+  input_index_array_src = std::make_shared<Vulkan::Buffer<uint16_t>>(device, Vulkan::StorageType::Index, Vulkan::HostVisibleMemory::HostVisible); 
 
-  input_vertex_array_dst = std::make_shared<Vulkan::Buffer<Vertex>>(device, Vulkan::StorageType::Vertex, Vulkan::BufferUsage::Transfer_dst); 
-  input_index_array_dst = std::make_shared<Vulkan::Buffer<uint16_t>>(device, Vulkan::StorageType::Index, Vulkan::BufferUsage::Transfer_dst);
+  input_vertex_array_dst = std::make_shared<Vulkan::Buffer<Vertex>>(device, Vulkan::StorageType::Vertex, Vulkan::HostVisibleMemory::HostInvisible); 
+  input_index_array_dst = std::make_shared<Vulkan::Buffer<uint16_t>>(device, Vulkan::StorageType::Index, Vulkan::HostVisibleMemory::HostInvisible);
 
-  // texture_data.Load("../Resources/wall-texture.jpg", 4);
-  // texture_data.Resize(512, 512);
-  // texture_image = std::make_shared<Vulkan::Image>(device, texture_data.Width(), 
-  //                                                 texture_data.Height(), 
-  //                                                 texture_data.Channels(), 
-  //                                                 Vulkan::ImageTiling::Optimal, 
-  //                                                 Vulkan::ImageUsage::Transfer_Dst_Sampled);
+  texture_data.Load(exec_directory + "../Resources/wall-texture.jpg", 4);
+  texture_data.Resize(512, 512);
+  texture_image = std::make_shared<Vulkan::Image>(device, texture_data.Width(), 
+                                                  texture_data.Height(), 
+                                                  Vulkan::ImageTiling::Optimal, 
+                                                  Vulkan::HostVisibleMemory::HostInvisible,
+                                                  Vulkan::ImageType::Sampled);
+  samlper = std::make_shared<Vulkan::Sampler>(device);
+
+  texture_buffer = std::make_shared<Vulkan::Buffer<uint8_t>>(device, Vulkan::StorageType::Storage, Vulkan::HostVisibleMemory::HostVisible);
+  *texture_buffer = texture_data.Canvas();
 
   descriptors = std::make_shared<Vulkan::Descriptors>(device);
   command_pool = std::make_shared<Vulkan::CommandPool>(device, device->GetGraphicFamilyQueueIndex().value());
 
   frames_in_pipeline = swapchain->GetImageViewsCount() + 5;
 
-  std::vector<std::shared_ptr<Vulkan::IBuffer>> buffs;
   for (size_t i = 0; i < swapchain->GetImageViewsCount(); ++i)
   {
-    world_uniform_buffers.push_back(std::make_shared<Vulkan::Buffer<World>>(device, Vulkan::StorageType::Uniform, Vulkan::BufferUsage::Transfer_src));
+    world_uniform_buffers.push_back(std::make_shared<Vulkan::Buffer<World>>(device, Vulkan::StorageType::Uniform, Vulkan::HostVisibleMemory::HostVisible));
     world_uniform_buffers[i]->AllocateBuffer(1);
-    buffs.push_back(world_uniform_buffers[i]);
+    descriptors->ClearDescriptorSetLayout(i);
+    descriptors->Add(i, world_uniform_buffers[i], VK_SHADER_STAGE_VERTEX_BIT, 0);
+    descriptors->Add(i, texture_image, samlper, VK_SHADER_STAGE_FRAGMENT_BIT, 1);
   }
 
-  descriptors->Add(buffs, VK_SHADER_STAGE_VERTEX_BIT, true);
-  descriptors->Build();
+  descriptors->BuildAll();
+
   PrepareShaders();
   g_pipeline->SetShaderInfos(shader_infos); 
  
   Vulkan::Supply::GetVertexInputBindingDescription<Vertex>(0, vertex_descriptions, binding_description[0], attribute_descriptions);
   g_pipeline->SetVertexInputBindingDescription(binding_description, attribute_descriptions);
-  g_pipeline->SetDescriptorsSetLayouts(descriptors->GetDescriptorSetLayout(0));
+
+  std::vector<VkDescriptorSetLayout> layouts;
+  for (size_t i = 0; i < descriptors->GetLayoutsCount(); ++i)
+  {
+    layouts.push_back(descriptors->GetDescriptorSetLayout(i));
+  }
+  
+  g_pipeline->SetDescriptorsSetLayouts(layouts);
 
   const std::vector<Vertex> vertices = 
   {
-    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
-    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
+    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}
   };
 
   const std::vector<uint16_t> indices = 
@@ -92,11 +110,42 @@ VisualEngine::VisualEngine()
 
   *input_vertex_array_src = vertices;
   *input_vertex_array_dst = vertices;
-  Vulkan::IBuffer::MoveData(device->GetDevice(), command_pool->GetCommandPool(), device->GetGraphicQueue(), input_vertex_array_src, input_vertex_array_dst);
-
   *input_index_array_src = indices;
   *input_index_array_dst = indices;
-  Vulkan::IBuffer::MoveData(device->GetDevice(), command_pool->GetCommandPool(), device->GetGraphicQueue(), input_index_array_src, input_index_array_dst);
+
+  VkBufferCopy copy_region = {};
+  copy_region.srcOffset = 0;
+  copy_region.dstOffset = 0;
+
+  VkBufferImageCopy image_region = {};
+  image_region.bufferOffset = 0;
+  image_region.bufferRowLength = 0;
+  image_region.bufferImageHeight = 0;
+
+  image_region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  image_region.imageSubresource.mipLevel = 0;
+  image_region.imageSubresource.baseArrayLayer = 0;
+  image_region.imageSubresource.layerCount = 1;
+
+  image_region.imageOffset = {0, 0, 0};
+  image_region.imageExtent = 
+  {
+    (uint32_t) texture_image->Width(),
+    (uint32_t) texture_image->Height(),
+    1
+  };
+
+  command_pool->BeginCommandBuffer(0);
+
+  copy_region.size = std::min(input_vertex_array_src->BufferLength(), input_vertex_array_src->BufferLength());
+  command_pool->CopyBuffer(0, input_vertex_array_src, input_vertex_array_dst, {copy_region});
+
+  copy_region.size = std::min(input_index_array_src->BufferLength(), input_index_array_src->BufferLength());
+  command_pool->CopyBuffer(0, input_index_array_src, input_index_array_dst, {copy_region});
+  command_pool->CopyBufferToImage(0, texture_buffer, texture_image, {image_region});
+  command_pool->EndCommandBuffer(0);
+  command_pool->ExecuteBuffer(0);
+
 
   WriteCommandBuffers();
   PrepareSyncPrimitives();
@@ -132,7 +181,12 @@ void VisualEngine::Draw(VisualEngine &obj)
 
 void VisualEngine::WriteCommandBuffers()
 {
-  std::vector<VkDescriptorSet> descriptor_sets = descriptors->GetDescriptorSet(0);
+  std::vector<VkDescriptorSet> descriptor_sets;
+  for (size_t i = 0; i < descriptors->GetLayoutsCount(); ++i)
+  {
+    auto t = descriptors->GetDescriptorSet(i);
+    descriptor_sets.insert(descriptor_sets.end(), t.begin(), t.end());
+  } 
   auto frame_buffers = render_pass->GetFrameBuffers();
 
   for (size_t i = 0; i < render_pass->GetFrameBuffersCount(); ++i)
@@ -223,10 +277,9 @@ void VisualEngine::DrawFrame()
 
 void VisualEngine::PrepareShaders()
 {
-  std::string path = std::filesystem::current_path();
   shader_infos.resize(2);
-  shader_infos[0] = {"main", path + "/tri.vert.spv", Vulkan::ShaderType::Vertex};
-  shader_infos[1] = {"main", path + "/tri.frag.spv", Vulkan::ShaderType::Fragment};
+  shader_infos[0] = {"main", exec_directory + "tri.vert.spv", Vulkan::ShaderType::Vertex};
+  shader_infos[1] = {"main", exec_directory + "tri.frag.spv", Vulkan::ShaderType::Fragment};
 }
 
 void VisualEngine::PrepareWindow()
