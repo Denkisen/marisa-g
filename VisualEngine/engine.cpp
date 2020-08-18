@@ -86,14 +86,7 @@ VisualEngine::VisualEngine(int argc, char const *argv[])
  
   Vulkan::Supply::GetVertexInputBindingDescription<Vertex>(0, vertex_descriptions, binding_description[0], attribute_descriptions);
   g_pipeline->SetVertexInputBindingDescription(binding_description, attribute_descriptions);
-
-  std::vector<VkDescriptorSetLayout> layouts;
-  for (size_t i = 0; i < descriptors->GetLayoutsCount(); ++i)
-  {
-    layouts.push_back(descriptors->GetDescriptorSetLayout(i));
-  }
-  
-  g_pipeline->SetDescriptorsSetLayouts(layouts);
+  g_pipeline->SetDescriptorsSetLayouts(descriptors->GetDescriptorSetLayouts());
 
   const std::vector<Vertex> vertices = 
   {
@@ -181,12 +174,7 @@ void VisualEngine::Draw(VisualEngine &obj)
 
 void VisualEngine::WriteCommandBuffers()
 {
-  std::vector<VkDescriptorSet> descriptor_sets;
-  for (size_t i = 0; i < descriptors->GetLayoutsCount(); ++i)
-  {
-    auto t = descriptors->GetDescriptorSet(i);
-    descriptor_sets.insert(descriptor_sets.end(), t.begin(), t.end());
-  } 
+  auto descriptor_sets = descriptors->GetDescriptorSets();
   auto frame_buffers = render_pass->GetFrameBuffers();
 
   for (size_t i = 0; i < render_pass->GetFrameBuffersCount(); ++i)
