@@ -16,7 +16,7 @@
 
 #define GLFW_INCLUDE_VULKAN
 #define GLM_FORCE_RADIANS
-#define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
@@ -25,12 +25,10 @@
 #include <vector>
 #include <memory>
 #include <thread>
-#include <optional>
-#include <chrono>
 
 struct Vertex
 {
-  glm::vec2 pos;
+  glm::vec3 pos;
   glm::vec3 color;
   glm::vec2 texCoord;
 };
@@ -45,34 +43,41 @@ struct World
 class VisualEngine
 {
 private:
-  size_t frames_in_pipeline = 0;
-  size_t current_frame = 0;
   Vulkan::Instance instance;
+
   std::shared_ptr<Vulkan::Device> device;
   std::shared_ptr<Vulkan::SwapChain> swapchain;
   std::shared_ptr<Vulkan::RenderPass> render_pass;
   std::shared_ptr<Vulkan::GraphicPipeline> g_pipeline;
+
   std::shared_ptr<Vulkan::Buffer<Vertex>> input_vertex_array_src;
   std::shared_ptr<Vulkan::Buffer<Vertex>> input_vertex_array_dst;
   std::shared_ptr<Vulkan::Buffer<uint16_t>> input_index_array_src;
   std::shared_ptr<Vulkan::Buffer<uint16_t>> input_index_array_dst;
   std::vector<std::shared_ptr<Vulkan::Buffer<World>>> world_uniform_buffers;
+
+  ImageBuffer texture_data;
   std::shared_ptr<Vulkan::Image> texture_image;
   std::shared_ptr<Vulkan::Sampler> samlper;
   std::shared_ptr<Vulkan::Buffer<uint8_t>> texture_buffer;
+
   std::shared_ptr<Vulkan::Descriptors> descriptors;
   std::shared_ptr<Vulkan::CommandPool> command_pool;
-  ImageBuffer texture_data;
+  
+  size_t frames_in_pipeline = 0;
+  size_t current_frame = 0;
   size_t height = 768;
   size_t width = 1024;
   GLFWwindow *window;
   std::thread event_handler_thread;
+  std::vector<Vulkan::ShaderInfo> shader_infos;
+  std::string exec_directory = "";
+ 
   std::vector<VkSemaphore> image_available_semaphores;
   std::vector<VkSemaphore> render_finished_semaphores;
   std::vector<VkFence> in_queue_fences;
   std::vector<VkFence> images_in_process;
-  std::vector<Vulkan::ShaderInfo> shader_infos;
-  std::string exec_directory = "";
+
   bool resize_flag;
 
   void WriteCommandBuffers();

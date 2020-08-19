@@ -1,6 +1,8 @@
 #include "engine.h"
 
 #include <filesystem>
+#include <optional>
+#include <chrono>
 
 VisualEngine::~VisualEngine()
 {
@@ -34,7 +36,7 @@ VisualEngine::VisualEngine(int argc, char const *argv[])
 
   std::vector<Vulkan::VertexDescription> vertex_descriptions = 
   {
-    {offsetof(Vertex, pos), VK_FORMAT_R32G32_SFLOAT},
+    {offsetof(Vertex, pos), VK_FORMAT_R32G32B32_SFLOAT},
     {offsetof(Vertex, color), VK_FORMAT_R32G32B32_SFLOAT},
     {offsetof(Vertex, texCoord), VK_FORMAT_R32G32_SFLOAT}
   };
@@ -75,8 +77,8 @@ VisualEngine::VisualEngine(int argc, char const *argv[])
     world_uniform_buffers.push_back(std::make_shared<Vulkan::Buffer<World>>(device, Vulkan::StorageType::Uniform, Vulkan::HostVisibleMemory::HostVisible));
     world_uniform_buffers[i]->AllocateBuffer(1);
     descriptors->ClearDescriptorSetLayout(i);
-    descriptors->Add(i, world_uniform_buffers[i], VK_SHADER_STAGE_VERTEX_BIT, 0);
-    descriptors->Add(i, texture_image, samlper, VK_SHADER_STAGE_FRAGMENT_BIT, 1);
+    descriptors->Add(i, 0, world_uniform_buffers[i], VK_SHADER_STAGE_VERTEX_BIT);
+    descriptors->Add(i, 1, texture_image, samlper, VK_SHADER_STAGE_FRAGMENT_BIT);
   }
 
   descriptors->BuildAll();
@@ -87,18 +89,23 @@ VisualEngine::VisualEngine(int argc, char const *argv[])
   Vulkan::Supply::GetVertexInputBindingDescription<Vertex>(0, vertex_descriptions, binding_description[0], attribute_descriptions);
   g_pipeline->SetVertexInputBindingDescription(binding_description, attribute_descriptions);
   g_pipeline->SetDescriptorsSetLayouts(descriptors->GetDescriptorSetLayouts());
+  g_pipeline->UseDepthTesting(VK_TRUE);
 
-  const std::vector<Vertex> vertices = 
-  {
-    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}
+  const std::vector<Vertex> vertices = {
+    {{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+    {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+    {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+    {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
+
+    {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+    {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+    {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+    {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}
   };
 
-  const std::vector<uint16_t> indices = 
-  {
-    0, 1, 2, 2, 3, 0
+  const std::vector<uint16_t> indices = {
+    0, 1, 2, 2, 3, 0,
+    4, 5, 6, 6, 7, 4
   };
 
   *input_vertex_array_src = vertices;
@@ -138,7 +145,6 @@ VisualEngine::VisualEngine(int argc, char const *argv[])
   command_pool->CopyBufferToImage(0, texture_buffer, texture_image, {image_region});
   command_pool->EndCommandBuffer(0);
   command_pool->ExecuteBuffer(0);
-
 
   WriteCommandBuffers();
   PrepareSyncPrimitives();
@@ -182,7 +188,7 @@ void VisualEngine::WriteCommandBuffers()
     command_pool->BeginCommandBuffer(i, VK_COMMAND_BUFFER_LEVEL_PRIMARY);
     command_pool->BindVertexBuffers(i, { input_vertex_array_dst->GetBuffer() }, { 0 }, 0, 1);
     command_pool->BindIndexBuffer(i, input_index_array_dst->GetBuffer(), VK_INDEX_TYPE_UINT16, 0);
-    command_pool->BeginRenderPass(i, render_pass->GetRenderPass(), frame_buffers[i], swapchain->GetExtent(), { 0, 0 });
+    command_pool->BeginRenderPass(i, render_pass, i, { 0, 0 });
     command_pool->BindPipeline(i, g_pipeline->GetPipeline(), VK_PIPELINE_BIND_POINT_GRAPHICS);
     command_pool->BindDescriptorSets(i, g_pipeline->GetPipelineLayout(), VK_PIPELINE_BIND_POINT_GRAPHICS, { descriptor_sets[i] }, {}, 0);
     command_pool->DrawIndexed(i, input_index_array_dst->ItemsCount(), 0, 0, 1, 0);
