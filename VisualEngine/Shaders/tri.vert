@@ -17,6 +17,7 @@ layout(location = 1) out vec2 fragTexCoord;
 
 void main() 
 {
+  gl_PointSize = 3.0;
   gl_Position = world.proj * world.view * world.model * vec4(inPosition, 1.0);
   fragColor = inColor;
   fragTexCoord = inTexCoord;

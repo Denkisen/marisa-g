@@ -11,8 +11,10 @@
 #include "../VK-nn/Vulkan/CommandPool.h"
 #include "../VK-nn/Vulkan/Image.h"
 #include "../VK-nn/Vulkan/Sampler.h"
-#include "../VK-nn/libs/ImageBuffer.h"
+#include "../VK-nn/Vulkan/Object.h"
+#include "../VK-nn/Vulkan/Vertex.h"
 
+#include "fps.h"
 
 #define GLFW_INCLUDE_VULKAN
 #define GLM_FORCE_RADIANS
@@ -25,13 +27,6 @@
 #include <vector>
 #include <memory>
 #include <thread>
-
-struct Vertex
-{
-  glm::vec3 pos;
-  glm::vec3 color;
-  glm::vec2 texCoord;
-};
 
 struct World 
 {
@@ -50,24 +45,19 @@ private:
   std::shared_ptr<Vulkan::RenderPass> render_pass;
   std::shared_ptr<Vulkan::GraphicPipeline> g_pipeline;
 
-  std::shared_ptr<Vulkan::Buffer<Vertex>> input_vertex_array_src;
-  std::shared_ptr<Vulkan::Buffer<Vertex>> input_vertex_array_dst;
-  std::shared_ptr<Vulkan::Buffer<uint16_t>> input_index_array_src;
-  std::shared_ptr<Vulkan::Buffer<uint16_t>> input_index_array_dst;
   std::vector<std::shared_ptr<Vulkan::Buffer<World>>> world_uniform_buffers;
-
-  ImageBuffer texture_data;
-  std::shared_ptr<Vulkan::Image> texture_image;
-  std::shared_ptr<Vulkan::Sampler> samlper;
-  std::shared_ptr<Vulkan::Buffer<uint8_t>> texture_buffer;
 
   std::shared_ptr<Vulkan::Descriptors> descriptors;
   std::shared_ptr<Vulkan::CommandPool> command_pool;
+  std::vector<Vulkan::BufferLock> buffer_locks;
+
+  std::shared_ptr<Vulkan::Object> girl;
   
   size_t frames_in_pipeline = 0;
   size_t current_frame = 0;
-  size_t height = 768;
-  size_t width = 1024;
+  size_t height = 820;
+  size_t width = 1280;
+  Fps fps;
   GLFWwindow *window;
   std::thread event_handler_thread;
   std::vector<Vulkan::ShaderInfo> shader_infos;
