@@ -27,35 +27,32 @@ VisualEngine::~VisualEngine()
 VisualEngine::VisualEngine(int argc, char const *argv[])
 {
   glfwInit();
+  settings.Load("test.conf");
   PrepareWindow();
-
+  
   exec_directory = Vulkan::Supply::GetExecDirectory(argv[0]);
+  auto vertex_description = Vulkan::GetVertexDescription(0);
 
   if (!std::filesystem::exists(exec_directory))
     throw std::runtime_error("argv[0] is not a valid path.");
 
   device = std::make_shared<Vulkan::Device>(Vulkan::PhysicalDeviceType::Discrete, Vulkan::QueueType::DrawingAndComputeType, window);
-  swapchain = std::make_shared<Vulkan::SwapChain>(device);
+  swapchain = std::make_shared<Vulkan::SwapChain>(device, (VkPresentModeKHR) settings.PresentMode());
   render_pass = std::make_shared<Vulkan::RenderPass>(device, swapchain);
   g_pipeline = std::make_shared<Vulkan::GraphicPipeline>(device, swapchain, render_pass);
-
-  PrepareShaders();
-  g_pipeline->SetShaderInfos(shader_infos); 
- 
-  auto vertex_description = Vulkan::GetVertexDescription(0);
-  g_pipeline->SetVertexInputBindingDescription({vertex_description.first}, vertex_description.second);
-  g_pipeline->UseDepthTesting(VK_TRUE);
-
   descriptors = std::make_shared<Vulkan::Descriptors>(device);
   command_pool = std::make_shared<Vulkan::CommandPool>(device, device->GetGraphicFamilyQueueIndex().value());
+
+  frames_in_pipeline = swapchain->GetImageViewsCount() + 5;
+
   buffer_locks.resize(render_pass->GetFrameBuffersCount());
   for (size_t i = 0; i < buffer_locks.size(); ++i)
     buffer_locks[i] = command_pool->OrderBufferLock();
 
-  frames_in_pipeline = swapchain->GetImageViewsCount() + 5;
-
   girl = std::make_shared<Vulkan::Object>(device, command_pool);
-  girl->LoadFromFiles("Resources/Models/girl/girl.obj", "Resources/Models/girl/girl.mtl", "Resources/Models/girl/girl.png");
+  girl->LoadModel("Resources/Models/girl/girl.obj", "Resources/Models/girl/");
+  girl->LoadTexture("Resources/Models/girl/girl_mip.png", true);
+  girl_pos = {0.0f, 0.0f, 0.0f};
 
   for (size_t i = 0; i < swapchain->GetImageViewsCount(); ++i)
   {
@@ -67,7 +64,15 @@ VisualEngine::VisualEngine(int argc, char const *argv[])
   }
 
   descriptors->BuildAll();
+
+  PrepareShaders();
+  g_pipeline->SetShaderInfos(shader_infos); 
   g_pipeline->SetDescriptorsSetLayouts(descriptors->GetDescriptorSetLayouts());
+  g_pipeline->SetVertexInputBindingDescription({vertex_description.first}, vertex_description.second);
+  g_pipeline->UseDepthTesting(VK_TRUE);
+  g_pipeline->SetSamplesCount((VkSampleCountFlagBits) settings.Multisampling());
+  render_pass->SetSamplesCount((VkSampleCountFlagBits) settings.Multisampling());
+  ReBuildPipelines();
 
   WriteCommandBuffers();
   PrepareSyncPrimitives();
@@ -94,6 +99,20 @@ void VisualEngine::FrameBufferResizeCallback(GLFWwindow* window, int width, int 
 {
   auto app = reinterpret_cast<VisualEngine*>(glfwGetWindowUserPointer(window));
   app->resize_flag = true;
+}
+
+void VisualEngine::KeyboardCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
+{
+  auto app = reinterpret_cast<VisualEngine*>(glfwGetWindowUserPointer(window));
+  if (key == GLFW_KEY_UP && action == GLFW_PRESS)
+    app->up_key_down = true;
+  if (key == GLFW_KEY_UP && action == GLFW_RELEASE)
+    app->up_key_down = false;
+
+  if (key == GLFW_KEY_DOWN && action == GLFW_PRESS)
+    app->down_key_down = true;
+  if (key == GLFW_KEY_DOWN && action == GLFW_RELEASE)
+    app->down_key_down = false;
 }
 
 void VisualEngine::Draw(VisualEngine &obj)
@@ -126,7 +145,18 @@ void VisualEngine::UpdateWorldUniformBuffers(uint32_t image_index)
   auto current_time = std::chrono::high_resolution_clock::now();
   float time = std::chrono::duration<float, std::chrono::seconds::period>(current_time - start_time).count();
   World bf = {};
-  bf.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(35.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+  if (up_key_down)
+  {
+    girl_pos.x -= 0.01 * time;
+    girl_pos.z -= 0.01 * time;
+  }
+  if (down_key_down)
+  {
+    girl_pos.x += 0.01 * time;
+    girl_pos.z += 0.01 * time;
+  }
+  bf.model = glm::translate(glm::mat4(1.0f), girl_pos); 
+  bf.model = glm::rotate(bf.model, time * glm::radians(35.0f), glm::vec3(0.0f, 1.0f, 0.0f));
   bf.view = glm::lookAt(glm::vec3(7.0f, 7.0f, 7.0f), glm::vec3(0.0f, 3.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
   bf.proj = glm::perspective(glm::radians(45.0f), swapchain->GetExtent().width / (float) swapchain->GetExtent().height, 0.1f, 100.0f);
   bf.proj[1][1] *= -1;
@@ -211,10 +241,11 @@ void VisualEngine::PrepareWindow()
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
   glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
-  window = glfwCreateWindow(width, height, instance.AppName().c_str(), nullptr, nullptr);
+  window = glfwCreateWindow(settings.Widght(), settings.Height(), instance.AppName().c_str(), nullptr, nullptr);
 
   glfwSetWindowUserPointer(window, this);
   glfwSetFramebufferSizeCallback(window, FrameBufferResizeCallback);
+  glfwSetKeyCallback(window, KeyboardCallback);
 }
 
 void VisualEngine::PrepareSyncPrimitives()

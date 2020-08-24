@@ -15,6 +15,7 @@
 #include "../VK-nn/Vulkan/Vertex.h"
 
 #include "fps.h"
+#include "Settings.h"
 
 #define GLFW_INCLUDE_VULKAN
 #define GLM_FORCE_RADIANS
@@ -38,6 +39,7 @@ struct World
 class VisualEngine
 {
 private:
+  Settings settings;
   Vulkan::Instance instance;
 
   std::shared_ptr<Vulkan::Device> device;
@@ -55,8 +57,6 @@ private:
   
   size_t frames_in_pipeline = 0;
   size_t current_frame = 0;
-  size_t height = 820;
-  size_t width = 1280;
   Fps fps;
   GLFWwindow *window;
   std::thread event_handler_thread;
@@ -69,6 +69,9 @@ private:
   std::vector<VkFence> images_in_process;
 
   bool resize_flag;
+  bool up_key_down = false;
+  bool down_key_down = false;
+  glm::vec3 girl_pos;
 
   void WriteCommandBuffers();
   void DrawFrame();
@@ -80,6 +83,7 @@ private:
   void UpdateWorldUniformBuffers(uint32_t image_index);
 
   static void FrameBufferResizeCallback(GLFWwindow* window, int width, int height);  
+  static void KeyboardCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
   static void Draw(VisualEngine &obj);
 public:
   VisualEngine() = delete;
