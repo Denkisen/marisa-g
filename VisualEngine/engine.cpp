@@ -39,9 +39,12 @@ VisualEngine::VisualEngine(int argc, char const *argv[])
   device = std::make_shared<Vulkan::Device>(Vulkan::PhysicalDeviceType::Discrete, Vulkan::QueueType::DrawingAndComputeType, window);
   swapchain = std::make_shared<Vulkan::SwapChain>(device, (VkPresentModeKHR) settings.PresentMode());
   render_pass = std::make_shared<Vulkan::RenderPass>(device, swapchain);
-  g_pipeline = std::make_shared<Vulkan::GraphicPipeline>(device, swapchain, render_pass);
+  g_pipeline = std::make_shared<Vulkan::GPipeline>(device, swapchain, render_pass);
+  g_pipeline_lock = g_pipeline->OrderPipelineLock();
   descriptors = std::make_shared<Vulkan::Descriptors>(device);
   command_pool = std::make_shared<Vulkan::CommandPool>(device, device->GetGraphicFamilyQueueIndex().value());
+
+  world_uniform_buffers = std::make_shared<Vulkan::BufferArray>(device);
 
   frames_in_pipeline = swapchain->GetImageViewsCount() + 5;
 
@@ -52,34 +55,47 @@ VisualEngine::VisualEngine(int argc, char const *argv[])
   girl = std::make_shared<Vulkan::Object>(device, command_pool);
   girl->LoadModel("Resources/Models/girl/girl.obj", "Resources/Models/girl/");
   girl->LoadTexture("Resources/Models/girl/girl_mip.png", true);
-  girl_pos = {0.0f, 0.0f, 0.0f};
+  girl->BuildTransformBuffers<World>(swapchain->GetImageViewsCount());
+
+  auto sz = world_uniform_buffers->CalculateBufferSize(sizeof(World), swapchain->GetImageViewsCount(), Vulkan::StorageType::Uniform);
+  world_uniform_buffers->DeclareBuffer(sz, Vulkan::HostVisibleMemory::HostInvisible, Vulkan::StorageType::Uniform);
+  world_uniform_buffers->SplitBufferOnEqualVirtualBuffers<World>(0);
+
+  std::vector<uint32_t> sets(swapchain->GetImageViewsCount());
+  std::vector<uint32_t> bindings(swapchain->GetImageViewsCount(), 0);
 
   for (size_t i = 0; i < swapchain->GetImageViewsCount(); ++i)
   {
-    world_uniform_buffers.push_back(std::make_shared<Vulkan::Buffer<World>>(device, Vulkan::StorageType::Uniform, Vulkan::HostVisibleMemory::HostVisible));
-    world_uniform_buffers[i]->AllocateBuffer(1);
     descriptors->ClearDescriptorSetLayout(i);
-    descriptors->Add(i, 0, world_uniform_buffers[i], VK_SHADER_STAGE_VERTEX_BIT);
+    sets[i] = i;
+    auto sub_buff = world_uniform_buffers->GetVirtualBuffer(0, i);
+    descriptors->Add(i, 0, sub_buff.first, world_uniform_buffers->BufferType(0), VK_SHADER_STAGE_VERTEX_BIT, {sub_buff.second.offset, sub_buff.second.size});
     descriptors->Add(i, 1, girl->GetTextureImage(), girl->GetSampler(), VK_SHADER_STAGE_FRAGMENT_BIT);
   }
 
   descriptors->BuildAll();
 
-  PrepareShaders();
-  g_pipeline->SetShaderInfos(shader_infos); 
-  g_pipeline->SetDescriptorsSetLayouts(descriptors->GetDescriptorSetLayouts());
-  g_pipeline->SetVertexInputBindingDescription({vertex_description.first}, vertex_description.second);
-  g_pipeline->UseDepthTesting(VK_TRUE);
-  g_pipeline->SetSamplesCount((VkSampleCountFlagBits) settings.Multisampling());
   render_pass->SetSamplesCount((VkSampleCountFlagBits) settings.Multisampling());
-  ReBuildPipelines();
+  render_pass->ReBuildRenderPass();
 
-  WriteCommandBuffers();
+  PrepareShaders();
+  g_pipeline->BeginPipeline(g_pipeline_lock);
+  g_pipeline->SetShaders(g_pipeline_lock, shader_infos); 
+  g_pipeline->SetDescriptorsSetLayouts(g_pipeline_lock, descriptors->GetDescriptorSetLayouts());
+  g_pipeline->SetVertexInputBindingDescription(g_pipeline_lock, {vertex_description.first}, vertex_description.second);
+  g_pipeline->UseDepthTesting(g_pipeline_lock, VK_TRUE);
+  g_pipeline->SetMultisampling(g_pipeline_lock, (VkSampleCountFlagBits) settings.Multisampling());
+  g_pipeline->SetSupersampling(g_pipeline_lock, VK_TRUE, 0.5);
+  g_pipeline->EnableDynamicStateViewport(g_pipeline_lock, VK_TRUE);
+  g_pipeline->EndPipeline(g_pipeline_lock, Vulkan::PipelineInheritance::None, {});
+
+  UpdateCommandBuffers();
   PrepareSyncPrimitives();
 }
 
 void VisualEngine::Start()
 {
+  priv_frame_time = std::chrono::high_resolution_clock::now();
   event_handler_thread = std::thread(&VisualEngine::EventHadler, this);
   if (event_handler_thread.joinable())
     event_handler_thread.join();
@@ -91,6 +107,7 @@ void VisualEngine::EventHadler()
   {
     glfwPollEvents();
     Draw(*this);
+    //std::this_thread::sleep_for(std::chrono::milliseconds(1000));
   }
   vkDeviceWaitIdle(device->GetDevice());
 }
@@ -117,23 +134,38 @@ void VisualEngine::KeyboardCallback(GLFWwindow* window, int key, int scancode, i
 
 void VisualEngine::Draw(VisualEngine &obj)
 {
-  obj.fps.Start();
   obj.DrawFrame();
 }
 
-void VisualEngine::WriteCommandBuffers()
+void VisualEngine::UpdateCommandBuffers()
 {
   auto descriptor_sets = descriptors->GetDescriptorSets();
   auto frame_buffers = render_pass->GetFrameBuffers();
+
+  VkViewport port = {};
+  port.x = 0.0f;
+  port.y = 0.0f;
+  port.width = (float) this->swapchain->GetExtent().width;
+  port.height = (float) this->swapchain->GetExtent().height;
+  port.minDepth = 0.0f;
+  port.maxDepth = 1.0f;
+
   for (size_t i = 0; i < buffer_locks.size(); ++i)
   {
     command_pool->BeginCommandBuffer(buffer_locks[i], VK_COMMAND_BUFFER_LEVEL_PRIMARY);
-    command_pool->BindVertexBuffers(buffer_locks[i], { girl->GetVertexBuffer()->GetBuffer() }, { 0 }, 0, 1);
-    command_pool->BindIndexBuffer(buffer_locks[i], girl->GetIndexBuffer()->GetBuffer(), VK_INDEX_TYPE_UINT32, 0);
+    command_pool->BindVertexBuffers(buffer_locks[i], { girl->GetVertexBuffer().first }, { 0 }, 0, 1);
+    command_pool->BindIndexBuffer(buffer_locks[i], girl->GetIndexBuffer().first, VK_INDEX_TYPE_UINT32, 0);
+    auto info = girl->CopyTransformBufferInfo(i);
+    command_pool->HostWriteBufferBarrier(buffer_locks[i], info.first, info.second.srcOffset, info.second.size, VK_PIPELINE_STAGE_TRANSFER_BIT);
+    auto sub_world = world_uniform_buffers->GetVirtualBuffer(0, i);
+    info.second.dstOffset = sub_world.second.offset;
+    command_pool->CopyBufferBarrier(buffer_locks[i], sub_world.first, sub_world.second.offset, sub_world.second.size, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT);
+    command_pool->CopyBuffer(buffer_locks[i], info.first, sub_world.first, {info.second});
     command_pool->BeginRenderPass(buffer_locks[i], render_pass, i, { 0, 0 });
-    command_pool->BindPipeline(buffer_locks[i], g_pipeline->GetPipeline(), VK_PIPELINE_BIND_POINT_GRAPHICS);
-    command_pool->BindDescriptorSets(buffer_locks[i], g_pipeline->GetPipelineLayout(), VK_PIPELINE_BIND_POINT_GRAPHICS, { descriptor_sets[i] }, {}, 0);
-    command_pool->DrawIndexed(buffer_locks[i], girl->GetIndexBuffer()->ItemsCount(), 0, 0, 1, 0);
+    command_pool->BindPipeline(buffer_locks[i], g_pipeline->GetPipeline(g_pipeline_lock), VK_PIPELINE_BIND_POINT_GRAPHICS);
+    command_pool->SetViewport(buffer_locks[i], {port});
+    command_pool->BindDescriptorSets(buffer_locks[i], g_pipeline->GetPipelineLayout(g_pipeline_lock), VK_PIPELINE_BIND_POINT_GRAPHICS, { descriptor_sets[i] }, {}, 0);
+    command_pool->DrawIndexed(buffer_locks[i], girl->GetIndexBuffer().second, 0, 0, 1, 0);
     command_pool->EndRenderPass(buffer_locks[i]);
     command_pool->EndCommandBuffer(buffer_locks[i]);
   }
@@ -141,26 +173,25 @@ void VisualEngine::WriteCommandBuffers()
 
 void VisualEngine::UpdateWorldUniformBuffers(uint32_t image_index)
 {
-  static auto start_time = std::chrono::high_resolution_clock::now();
   auto current_time = std::chrono::high_resolution_clock::now();
-  float time = std::chrono::duration<float, std::chrono::seconds::period>(current_time - start_time).count();
+  float time = std::chrono::duration<float, std::chrono::seconds::period>(current_time - priv_frame_time).count();
   World bf = {};
   if (up_key_down)
   {
-    girl_pos.x -= 0.01 * time;
-    girl_pos.z -= 0.01 * time;
+    girl->Move(glm::vec3(-30.0f * time, 0.0, -30.0f * time));
   }
   if (down_key_down)
   {
-    girl_pos.x += 0.01 * time;
-    girl_pos.z += 0.01 * time;
+    girl->Move(glm::vec3(30.0f * time, 0.0, 30.0f * time));
   }
-  bf.model = glm::translate(glm::mat4(1.0f), girl_pos); 
-  bf.model = glm::rotate(bf.model, time * glm::radians(35.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+  girl->Turn(time * 30.0f);
+  bf.model = girl->ObjectTransforations();
   bf.view = glm::lookAt(glm::vec3(7.0f, 7.0f, 7.0f), glm::vec3(0.0f, 3.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
   bf.proj = glm::perspective(glm::radians(45.0f), swapchain->GetExtent().width / (float) swapchain->GetExtent().height, 0.1f, 100.0f);
   bf.proj[1][1] *= -1;
-  *world_uniform_buffers[image_index] = bf;
+
+  girl->UpdateTransformBuffer(image_index, bf);
+  //world_uniform_buffers->TrySetValue(image_index, 0, std::vector<World>{bf});
 }
 
 void VisualEngine::DrawFrame()
@@ -188,6 +219,8 @@ void VisualEngine::DrawFrame()
   images_in_process[image_index] = in_queue_fences[image_index];
 
   UpdateWorldUniformBuffers(image_index);
+
+  priv_frame_time = std::chrono::high_resolution_clock::now();
 
   VkSemaphore wait_semaphores[] = { image_available_semaphores[current_frame] };  
   VkSemaphore signal_semaphores[] = { render_finished_semaphores[current_frame] };
@@ -218,13 +251,6 @@ void VisualEngine::DrawFrame()
     throw std::runtime_error("failed to submit draw command buffer!");
   }
   vkQueuePresentKHR(device->GetPresentQueue(), &present_info);
-  fps.Frame();
-  if (current_frame == frames_in_pipeline - 1)
-  {
-    std::string title = instance.AppName() + " FPS:" + std::to_string(fps.GetFps());
-    glfwSetWindowTitle(window, title.c_str());
-    fps.Start();
-  }
 
   current_frame = (current_frame + 1) % frames_in_pipeline;
 }
@@ -285,8 +311,7 @@ void VisualEngine::ReBuildPipelines()
   resize_flag = false;
   swapchain->ReBuildSwapChain();
   render_pass->ReBuildRenderPass();
-  g_pipeline->ReBuildPipeline();
 
-  WriteCommandBuffers();
+  UpdateCommandBuffers();
 }
 

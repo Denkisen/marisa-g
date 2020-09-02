@@ -4,7 +4,7 @@
 #include "../VK-nn/Vulkan/Instance.h"
 #include "../VK-nn/Vulkan/Device.h"
 #include "../VK-nn/Vulkan/SwapChain.h"
-#include "../VK-nn/Vulkan/GraphicPipeline.h"
+#include "../VK-nn/Vulkan/GPipeline.h"
 #include "../VK-nn/Vulkan/RenderPass.h"
 #include "../VK-nn/Vulkan/Descriptors.h"
 #include "../VK-nn/Vulkan/Buffer.h"
@@ -13,8 +13,8 @@
 #include "../VK-nn/Vulkan/Sampler.h"
 #include "../VK-nn/Vulkan/Object.h"
 #include "../VK-nn/Vulkan/Vertex.h"
+#include "../VK-nn/Vulkan/BufferArray.h"
 
-#include "fps.h"
 #include "Settings.h"
 
 #define GLFW_INCLUDE_VULKAN
@@ -45,9 +45,10 @@ private:
   std::shared_ptr<Vulkan::Device> device;
   std::shared_ptr<Vulkan::SwapChain> swapchain;
   std::shared_ptr<Vulkan::RenderPass> render_pass;
-  std::shared_ptr<Vulkan::GraphicPipeline> g_pipeline;
+  std::shared_ptr<Vulkan::GPipeline> g_pipeline;
+  Vulkan::PipelineLock g_pipeline_lock;
 
-  std::vector<std::shared_ptr<Vulkan::Buffer<World>>> world_uniform_buffers;
+  std::shared_ptr<Vulkan::BufferArray> world_uniform_buffers;
 
   std::shared_ptr<Vulkan::Descriptors> descriptors;
   std::shared_ptr<Vulkan::CommandPool> command_pool;
@@ -57,7 +58,7 @@ private:
   
   size_t frames_in_pipeline = 0;
   size_t current_frame = 0;
-  Fps fps;
+  std::chrono::_V2::system_clock::time_point priv_frame_time;
   GLFWwindow *window;
   std::thread event_handler_thread;
   std::vector<Vulkan::ShaderInfo> shader_infos;
@@ -71,9 +72,8 @@ private:
   bool resize_flag;
   bool up_key_down = false;
   bool down_key_down = false;
-  glm::vec3 girl_pos;
 
-  void WriteCommandBuffers();
+  void UpdateCommandBuffers();
   void DrawFrame();
   void EventHadler();
   void PrepareShaders();
