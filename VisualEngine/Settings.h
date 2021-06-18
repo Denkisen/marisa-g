@@ -14,8 +14,10 @@ enum class WindowMode_t
 
 enum class PresentMode_t
 {
-  Vsync = VK_PRESENT_MODE_MAILBOX_KHR,
-  NoVsync = VK_PRESENT_MODE_IMMEDIATE_KHR
+  Mailbox = VK_PRESENT_MODE_MAILBOX_KHR,
+  Immediate = VK_PRESENT_MODE_IMMEDIATE_KHR,
+  DefaultFIFO = VK_PRESENT_MODE_FIFO_KHR,
+  RelaxedFIFO = VK_PRESENT_MODE_FIFO_RELAXED_KHR
 };
 
 enum class MSAA_t
@@ -36,8 +38,8 @@ private:
   size_t height = 820;
   size_t width = 1280;
   WindowMode_t window_mode = WindowMode_t::Window;
-  PresentMode_t present_mode = PresentMode_t::Vsync;
-  MSAA_t multisampling = MSAA_t::x8;
+  PresentMode_t present_mode = PresentMode_t::DefaultFIFO;
+  MSAA_t multisampling = MSAA_t::x2;
 public:
   Settings() = default;
   ~Settings() = default;

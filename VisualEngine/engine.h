@@ -3,19 +3,20 @@
 
 #include "../VK-nn/Vulkan/Instance.h"
 #include "../VK-nn/Vulkan/Device.h"
+#include "../VK-nn/Vulkan/Surface.h"
 #include "../VK-nn/Vulkan/SwapChain.h"
-#include "../VK-nn/Vulkan/GPipeline.h"
+#include "../VK-nn/Vulkan/Pipelines.h"
 #include "../VK-nn/Vulkan/RenderPass.h"
 #include "../VK-nn/Vulkan/Descriptors.h"
-#include "../VK-nn/Vulkan/Buffer.h"
+#include "../VK-nn/Vulkan/StorageArray.h"
+#include "../VK-nn/Vulkan/ImageArray.h"
 #include "../VK-nn/Vulkan/CommandPool.h"
-#include "../VK-nn/Vulkan/Image.h"
 #include "../VK-nn/Vulkan/Sampler.h"
-#include "../VK-nn/Vulkan/Object.h"
-#include "../VK-nn/Vulkan/Vertex.h"
-#include "../VK-nn/Vulkan/BufferArray.h"
+#include "../VK-nn/Vulkan/Fence.h"
+#include "../VK-nn/Vulkan/Semaphore.h"
 
 #include "Settings.h"
+#include "TestObject.h"
 
 #define GLFW_INCLUDE_VULKAN
 #define GLM_FORCE_RADIANS
@@ -34,44 +35,43 @@ struct World
   glm::mat4 model;
   glm::mat4 view;
   glm::mat4 proj;
+  glm::vec4 light;
 };
 
 class VisualEngine
 {
 private:
   Settings settings;
-  Vulkan::Instance instance;
 
   std::shared_ptr<Vulkan::Device> device;
   std::shared_ptr<Vulkan::SwapChain> swapchain;
+  std::shared_ptr<Vulkan::Surface> surface;
   std::shared_ptr<Vulkan::RenderPass> render_pass;
-  std::shared_ptr<Vulkan::GPipeline> g_pipeline;
-  Vulkan::PipelineLock g_pipeline_lock;
+  Vulkan::Pipelines pipelines;
 
-  std::shared_ptr<Vulkan::BufferArray> world_uniform_buffers;
-
+  std::shared_ptr<Vulkan::StorageArray> storage_buffers;
+  std::shared_ptr<Vulkan::ImageArray> render_pass_bufers;
   std::shared_ptr<Vulkan::Descriptors> descriptors;
   std::shared_ptr<Vulkan::CommandPool> command_pool;
-  std::vector<Vulkan::BufferLock> buffer_locks;
 
-  std::shared_ptr<Vulkan::Object> girl;
+  std::unique_ptr<TestObject> girl;
   
   size_t frames_in_pipeline = 0;
   size_t current_frame = 0;
   std::chrono::_V2::system_clock::time_point priv_frame_time;
-  GLFWwindow *window;
   std::thread event_handler_thread;
-  std::vector<Vulkan::ShaderInfo> shader_infos;
   std::string exec_directory = "";
  
-  std::vector<VkSemaphore> image_available_semaphores;
-  std::vector<VkSemaphore> render_finished_semaphores;
-  std::vector<VkFence> in_queue_fences;
-  std::vector<VkFence> images_in_process;
+  std::unique_ptr<Vulkan::SemaphoreArray> image_available_semaphores;
+  std::unique_ptr<Vulkan::SemaphoreArray> render_finished_semaphores;
+  std::vector<VkFence> exec_fences;
+  std::vector<VkFence> in_process;
 
   bool resize_flag;
   bool up_key_down = false;
   bool down_key_down = false;
+  bool left_key_down = false;
+  bool right_key_down = false;
 
   void UpdateCommandBuffers();
   void DrawFrame();
